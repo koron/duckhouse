@@ -59,7 +59,7 @@ func duckhouseGetDB(r *http.Request) (*sql.DB, connID, error) {
 	}
 	rawdb, ok := idToDB.Load(id)
 	if ok {
-		return rawdb.(*sql.DB), 0, nil
+		return rawdb.(*sql.DB), id, nil
 	}
 	// Create a new database for the connection
 	db, err := sql.Open("duckdb", "")
@@ -208,6 +208,7 @@ func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return httperror.Newf(500, "No associated DB: %s", err)
 	}
+	w.Header().Set("Duckhouse-Connectionid", id.String())
 	slog.Debug("queried", "connID", id, "query", query)
 	rows, err := db.QueryContext(r.Context(), query)
 	if err != nil {
