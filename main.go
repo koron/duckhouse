@@ -132,7 +132,9 @@ func writeAsCSV(w http.ResponseWriter, rows *sql.Rows) error {
 		// Choose the right stringification function depending on the type name
 		// in your database
 		strfuncs := make([]func(any) string, len(types))
+		records := make([]string, len(types))
 		for i, typ := range types {
+			records[i] = typ.Name()
 			switch typ.DatabaseTypeName() {
 			case "BLOB":
 				strfuncs[i] = blobToStr
@@ -141,9 +143,15 @@ func writeAsCSV(w http.ResponseWriter, rows *sql.Rows) error {
 			}
 			// FIXME: support other special types
 		}
+		// Write the header
+		if len(types) > 0 {
+			err := ww.Write(records)
+			if err != nil {
+				return err
+			}
+		}
 		// Scan and write values (CSV body)
 		values := make([]any, len(types))
-		records := make([]string, len(types))
 		for i := range values {
 			values[i] = new(any)
 		}
