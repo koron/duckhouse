@@ -24,6 +24,8 @@ var (
 	idToDB   sync.Map
 
 	accessLogWriter io.Writer = os.Stdout
+
+	nullStr = "NULL"
 )
 
 func duckhouseNewConnID(c net.Conn) uint64 {
@@ -108,11 +110,11 @@ func readQuery(r *http.Request) string {
 }
 
 func anyToStr(v any) string {
-	return fmt.Sprint(*(v.(*any)))
+	return fmt.Sprint(v)
 }
 
 func blobToStr(v any) string {
-	return string((*(v.(*any))).([]uint8))
+	return string(v.([]uint8))
 }
 
 func writeAsCSV(w http.ResponseWriter, rows *sql.Rows) error {
@@ -150,7 +152,12 @@ func writeAsCSV(w http.ResponseWriter, rows *sql.Rows) error {
 			if err != nil {
 				return err
 			}
-			for i, v := range values {
+			for i, pv := range values {
+				v := *pv.(*any)
+				if (v == nil) {
+					records[i] = nullStr
+					continue
+				}
 				records[i] = strfuncs[i](v)
 			}
 			if err := ww.Write(records); err != nil {
