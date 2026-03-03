@@ -17,7 +17,8 @@ import (
 	"sync"
 	"time"
 
-	_ "github.com/duckdb/duckdb-go/v2"
+	"github.com/duckdb/duckdb-go/v2"
+	"github.com/koron/duckhouse/internal/httperror"
 )
 
 var (
@@ -60,6 +61,7 @@ func duckhouseGetDB(r *http.Request) (*sql.DB, connID, error) {
 	if ok {
 		return rawdb.(*sql.DB), 0, nil
 	}
+	// Create a new database for the connection
 	db, err := sql.Open("duckdb", "")
 	if err != nil {
 		return nil, 0, err
@@ -193,53 +195,50 @@ func writeAsCSV(w http.ResponseWriter, rows *sql.Rows) error {
 	return nil
 }
 
-func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) {
+func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != "GET" && r.Method != "POST" {
-		w.WriteHeader(404)
-		io.WriteString(w, "Not Found\r\n")
-		return
+		return httperror.New(404)
 	}
 	query, err := readQuery(r)
 	if err != nil {
-		w.WriteHeader(400)
-		io.WriteString(w, "No queries, please specify a query\r\n"+err.Error())
-		return
+		return httperror.Newf(400, "No queries: %s", err)
 	}
 
 	db, id, err := duckhouseGetDB(r)
 	if err != nil {
-		w.WriteHeader(500)
-		io.WriteString(w, "No associated DB: "+err.Error())
-		return
+		return httperror.Newf(500, "No associated DB: %s", err)
 	}
 	slog.Debug("queried", "connID", id, "query", query)
 	rows, err := db.QueryContext(r.Context(), query)
 	if err != nil {
-		w.WriteHeader(500)
-		fmt.Fprintf(w, "Query failed: %s\r\n", err)
-		return
+		if _, ok := err.(*duckdb.Error); !ok {
+			return httperror.Newf(500, "DB error: %s", err)
+		}
+		return httperror.Newf(400, "Query error: %s", err)
 	}
 	defer rows.Close()
 
 	err = writeAsCSV(w, rows)
 	if err != nil {
-		w.WriteHeader(500)
-		fmt.Fprintf(w, "Serialization error: %s\r\n", err)
+		return httperror.Newf(500, "Serialization error: %s", err)
 	}
+	return nil
 }
 
 func duckhouseHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/" {
-		duckhouseHandleQuery(w, r)
+		err := duckhouseHandleQuery(w, r)
+		if err != nil {
+			httperror.Write(w, err)
+		}
 		return
 	}
 	if r.URL.Path == "/ping" || strings.HasPrefix(r.URL.Path, "/ping/") {
 		w.WriteHeader(200)
-		io.WriteString(w, "OK\r\n")
+		w.Write([]byte("OK\r\n"))
 		return
 	}
-	w.WriteHeader(404)
-	io.WriteString(w, "Not Found\r\n")
+	httperror.Write(w, httperror.New(404))
 }
 
 type wrapResponseWriter struct {
