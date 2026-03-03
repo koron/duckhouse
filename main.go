@@ -26,6 +26,9 @@ var (
 	connToID sync.Map
 	idToDB   sync.Map
 
+	dbCount int
+	dbMutex sync.Mutex
+
 	accessLogWriter io.Writer = os.Stdout
 
 	nullStr = "NULL"
@@ -52,6 +55,8 @@ func dbToLogArg(db *sql.DB) string {
 	return fmt.Sprintf("%p", db)
 }
 
+var errMaxDB = errors.New("reached maximum number of DB")
+
 func duckhouseGetDB(r *http.Request) (*sql.DB, connID, error) {
 	id, ok := r.Context().Value(connIDKey{}).(connID)
 	if !ok {
@@ -62,13 +67,19 @@ func duckhouseGetDB(r *http.Request) (*sql.DB, connID, error) {
 		return rawdb.(*sql.DB), id, nil
 	}
 	// Create a new database for the connection
+	dbMutex.Lock()
+	defer dbMutex.Unlock()
+	if dbCount >= maxDB {
+		return nil, 0, errMaxDB
+	}
 	db, err := sql.Open("duckdb", "")
 	if err != nil {
 		return nil, 0, err
 	}
 	db.SetMaxIdleConns(0)
 	idToDB.Store(id, db)
-	slog.Debug("DB opened", "connID", id, "DB", dbToLogArg(db))
+	dbCount++
+	slog.Debug("DB opened", "connID", id, "DB", dbToLogArg(db), "count", dbCount)
 	return db, id, nil
 }
 
@@ -84,6 +95,8 @@ func duckhouseCloseConn(c net.Conn) error {
 	if !ok {
 		return fmt.Errorf("no ID for net.Conn=%p", c)
 	}
+	dbMutex.Lock()
+	defer dbMutex.Unlock()
 	id := rawid.(connID)
 	idSet.Delete(id)
 	rawdb, ok := idToDB.LoadAndDelete(id)
@@ -92,7 +105,10 @@ func duckhouseCloseConn(c net.Conn) error {
 	}
 	db := rawdb.(*sql.DB)
 	db.Close()
-	slog.Debug("DB closed", "connID", id, "DB", dbToLogArg(db))
+	if dbCount > 0 {
+		dbCount--
+	}
+	slog.Debug("DB closed", "connID", id, "DB", dbToLogArg(db), "count", dbCount)
 	return nil
 }
 
@@ -206,6 +222,9 @@ func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) error {
 
 	db, id, err := duckhouseGetDB(r)
 	if err != nil {
+		if err == errMaxDB {
+			return httperror.Newf(429, err.Error())
+		}
 		return httperror.Newf(500, "No associated DB: %s", err)
 	}
 	w.Header().Set("Duckhouse-Connectionid", id.String())
@@ -305,10 +324,12 @@ func run() error {
 
 var (
 	debugFlag bool
+	maxDB     int
 )
 
 func main() {
 	flag.BoolVar(&debugFlag, "debug", false, `enable debug log`)
+	flag.IntVar(&maxDB, "maxdb", 4, `maximum number of DB instances`)
 	flag.Parse()
 	if debugFlag {
 		slog.SetLogLoggerLevel(slog.LevelDebug)
