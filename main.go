@@ -107,6 +107,14 @@ func readQuery(r *http.Request) string {
 	return ""
 }
 
+func anyToStr(v any) string {
+	return fmt.Sprint(*(v.(*any)))
+}
+
+func blobToStr(v any) string {
+	return string((*(v.(*any))).([]uint8))
+}
+
 func writeAsCSV(w http.ResponseWriter, rows *sql.Rows) error {
 	w.Header().Set("Content-Type", "text/csv")
 	w.WriteHeader(200)
@@ -119,16 +127,17 @@ func writeAsCSV(w http.ResponseWriter, rows *sql.Rows) error {
 		if err != nil {
 			return err
 		}
-		if len(types) > 0 {
-			names := make([]string, len(types))
-			fmt.Println("Column types:")
-			for i, typ := range types {
-				names[i] = typ.Name()
-				fmt.Printf("  #%d: name=%s %s\n", i, typ.Name(), typ.ScanType())
+		// Choose the right stringification function depending on the type name
+		// in your database
+		strfuncs := make([]func(any) string, len(types))
+		for i, typ := range types {
+			switch typ.DatabaseTypeName() {
+			case "BLOB":
+				strfuncs[i] = blobToStr
+			default:
+				strfuncs[i] = anyToStr
 			}
-			if err := ww.Write(names); err != nil {
-				return err
-			}
+			// FIXME: support other special types
 		}
 		// Scan and write values (CSV body)
 		values := make([]any, len(types))
@@ -142,7 +151,7 @@ func writeAsCSV(w http.ResponseWriter, rows *sql.Rows) error {
 				return err
 			}
 			for i, v := range values {
-				records[i] = fmt.Sprint(*(v.(*any)))
+				records[i] = strfuncs[i](v)
 			}
 			if err := ww.Write(records); err != nil {
 				return err
@@ -249,7 +258,7 @@ func recordCombinedAccessLog(w io.Writer, r *http.Request, status, bodySize int)
 }
 
 func middlewareCombinedAccessLogger(logWriter io.Writer, h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request){
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ww := &wrapResponseWriter{base: w}
 		h.ServeHTTP(ww, r)
 		recordCombinedAccessLog(logWriter, r, ww.status, ww.bsize)
