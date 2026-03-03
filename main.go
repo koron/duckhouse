@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
+	"errors"
+	"flag"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"math/rand/v2"
 	"net"
 	"net/http"
@@ -28,9 +30,15 @@ var (
 	nullStr = "NULL"
 )
 
-func duckhouseNewConnID(c net.Conn) uint64 {
+type connID uint64
+
+func (id connID) String() string {
+	return fmt.Sprintf("%016x", uint64(id))
+}
+
+func duckhouseNewConnID(c net.Conn) connID {
 	for {
-		id := rand.Uint64()
+		id := connID(rand.Uint64())
 		_, ok := idSet.LoadOrStore(id, true)
 		if !ok {
 			connToID.Store(c, id)
@@ -39,8 +47,12 @@ func duckhouseNewConnID(c net.Conn) uint64 {
 	}
 }
 
-func duckhouseGetDB(r *http.Request) (*sql.DB, uint64, error) {
-	id, ok := r.Context().Value(connIDKey{}).(uint64)
+func dbToLogArg(db *sql.DB) string {
+	return fmt.Sprintf("%p", db)
+}
+
+func duckhouseGetDB(r *http.Request) (*sql.DB, connID, error) {
+	id, ok := r.Context().Value(connIDKey{}).(connID)
 	if !ok {
 		return nil, 0, fmt.Errorf("no connection ID assigned for request:%v", r)
 	}
@@ -54,7 +66,7 @@ func duckhouseGetDB(r *http.Request) (*sql.DB, uint64, error) {
 	}
 	db.SetMaxIdleConns(0)
 	idToDB.Store(id, db)
-	log.Printf("created sql.DB=%p for connID=%016x", db, id)
+	slog.Debug("DB opened", "connID", id, "DB", dbToLogArg(db))
 	return db, id, nil
 }
 
@@ -70,7 +82,7 @@ func duckhouseCloseConn(c net.Conn) error {
 	if !ok {
 		return fmt.Errorf("no ID for net.Conn=%p", c)
 	}
-	id := rawid.(uint64)
+	id := rawid.(connID)
 	idSet.Delete(id)
 	rawdb, ok := idToDB.LoadAndDelete(id)
 	if !ok {
@@ -78,7 +90,7 @@ func duckhouseCloseConn(c net.Conn) error {
 	}
 	db := rawdb.(*sql.DB)
 	db.Close()
-	log.Printf("closed sql.DB=%p for connID=%016x", db, id)
+	slog.Debug("DB closed", "connID", id, "DB", dbToLogArg(db))
 	return nil
 }
 
@@ -86,27 +98,27 @@ func duckhouseConnState(c net.Conn, s http.ConnState) {
 	if s == http.StateClosed {
 		err := duckhouseCloseConn(c)
 		if err != nil {
-			log.Printf("failed to close conn: %s", err)
+			slog.Warn("failed to close DB", "error", err)
 		}
 	}
 }
 
-func readQuery(r *http.Request) string {
+func readQuery(r *http.Request) (string, error) {
 	b, err := io.ReadAll(r.Body)
 	if err != nil {
-		log.Printf("failed to read request body: %s", err)
+		return "", err
 	}
 	if len(b) > 0 {
-		return string(b)
+		return string(b), nil
 	}
 	q := r.URL.Query()
 	if s := q.Get("q"); s != "" {
-		return s
+		return s, nil
 	}
 	if s := q.Get("query"); s != "" {
-		return s
+		return s, nil
 	}
-	return ""
+	return "", errors.New("no queries")
 }
 
 func anyToStr(v any) string {
@@ -162,7 +174,7 @@ func writeAsCSV(w http.ResponseWriter, rows *sql.Rows) error {
 			}
 			for i, pv := range values {
 				v := *pv.(*any)
-				if (v == nil) {
+				if v == nil {
 					records[i] = nullStr
 					continue
 				}
@@ -187,10 +199,10 @@ func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "Not Found\r\n")
 		return
 	}
-	query := readQuery(r)
-	if query == "" {
+	query, err := readQuery(r)
+	if err != nil {
 		w.WriteHeader(400)
-		io.WriteString(w, "No queries, please specify a query\r\n")
+		io.WriteString(w, "No queries, please specify a query\r\n"+err.Error())
 		return
 	}
 
@@ -200,7 +212,7 @@ func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "No associated DB: "+err.Error())
 		return
 	}
-	log.Printf("query=%q connID=%016x", query, id)
+	slog.Debug("queried", "connID", id, "query", query)
 	rows, err := db.QueryContext(r.Context(), query)
 	if err != nil {
 		w.WriteHeader(500)
@@ -280,19 +292,28 @@ func middlewareCombinedAccessLogger(logWriter io.Writer, h http.Handler) http.Ha
 	})
 }
 
-func run2() error {
+func run() error {
 	srv := &http.Server{
 		Addr:        "localhost:9998",
 		Handler:     middlewareCombinedAccessLogger(accessLogWriter, http.HandlerFunc(duckhouseHandler)),
 		ConnContext: duckhouseConnContext,
 		ConnState:   duckhouseConnState,
 	}
-	log.Printf("listening on %s", srv.Addr)
+	slog.Info("listening on", "addr", srv.Addr)
 	return srv.ListenAndServe()
 }
 
+var (
+	debugFlag bool
+)
+
 func main() {
-	if err := run2(); err != nil {
-		log.Fatal(err)
+	flag.BoolVar(&debugFlag, "debug", false, `enable debug log`)
+	flag.Parse()
+	if debugFlag {
+		slog.SetLogLoggerLevel(slog.LevelDebug)
+	}
+	if err := run(); err != nil {
+		slog.Error("server terminated", "error", err)
 	}
 }
