@@ -14,7 +14,7 @@ func extractID(r *http.Request) (ID, error) {
 	return "", nil
 }
 
-type idKey = struct{}
+type idKey struct{}
 
 func WrapHandler(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

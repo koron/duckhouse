@@ -17,6 +17,7 @@ import (
 	"sync"
 
 	"github.com/duckdb/duckdb-go/v2"
+	"github.com/koron/duckhouse/internal/authn"
 	"github.com/koron/duckhouse/internal/combinedlog"
 	"github.com/koron/duckhouse/internal/httperror"
 )
