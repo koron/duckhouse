@@ -262,9 +262,12 @@ func duckhouseHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func run() error {
+	var h http.Handler = http.HandlerFunc(duckhouseHandler)
+	h = combinedlog.WrapHandler(accessLogWriter, h)
+	h = authn.WrapHandler(h)
 	srv := &http.Server{
 		Addr:        "localhost:9998",
-		Handler:     combinedlog.WrapHandler(accessLogWriter, http.HandlerFunc(duckhouseHandler)),
+		Handler:     h,
 		ConnContext: duckhouseConnContext,
 		ConnState:   duckhouseConnState,
 	}
