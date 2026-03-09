@@ -15,6 +15,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/koron/duckhouse/internal/authn"
@@ -230,6 +231,7 @@ func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) error {
 	}
 	w.Header().Set("Duckhouse-Connectionid", id.String())
 	slog.Debug("queried", "connID", id, "query", query)
+	start := time.Now()
 	rows, err := db.QueryContext(r.Context(), query)
 	if err != nil {
 		if _, ok := err.(*duckdb.Error); !ok {
@@ -238,6 +240,10 @@ func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) error {
 		return httperror.Newf(400, "Query error: %s", err)
 	}
 	defer rows.Close()
+	dur := time.Since(start)
+	if r, ok := w.(combinedlog.QueryReporter); ok {
+		r.QueryReport(query, dur)
+	}
 
 	err = writeAsCSV(w, rows)
 	if err != nil {
