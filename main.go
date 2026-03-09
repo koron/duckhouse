@@ -126,6 +126,7 @@ func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) error {
 		return httperror.Newf(400, "No queries: %s", err)
 	}
 
+	// Execute a query
 	db, id, err := conndb.GetDB(r.Context())
 	if err != nil {
 		if errors.Is(err, conndb.ErrMaxDB) {
@@ -133,8 +134,6 @@ func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) error {
 		}
 		return httperror.Newf(500, "No associated DB: %s", err)
 	}
-	w.Header().Set("Duckhouse-Connectionid", id.String())
-	slog.Debug("queried", "connID", id, "query", query)
 	start := time.Now()
 	rows, err := db.QueryContext(r.Context(), query)
 	if err != nil {
@@ -148,12 +147,25 @@ func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) error {
 	if r, ok := w.(combinedlog.QueryReporter); ok {
 		r.QueryReport(query, dur)
 	}
+	w.Header().Set("Duckhouse-Connectionid", id.String())
+	w.Header().Set("Duckhouse-Duration", dur.String())
 
+	// Write the response body
 	err = writeAsCSV(w, rows)
 	if err != nil {
 		return httperror.Newf(500, "Serialization error: %s", err)
 	}
 	return nil
+}
+
+func matchPath(r *http.Request, path string) bool {
+	if r.URL.Path == path {
+		return true
+	}
+	if len(path) > 0 && path[len(path)-1] != '/' && strings.HasPrefix(r.URL.Path, path+"/") {
+		return true
+	}
+	return false
 }
 
 func duckhouseHandler(w http.ResponseWriter, r *http.Request) {
@@ -164,7 +176,7 @@ func duckhouseHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if r.URL.Path == "/ping" || strings.HasPrefix(r.URL.Path, "/ping/") {
+	if matchPath(r, "/ping") {
 		w.WriteHeader(200)
 		w.Write([]byte("OK\r\n"))
 		return
@@ -172,12 +184,12 @@ func duckhouseHandler(w http.ResponseWriter, r *http.Request) {
 	httperror.Write(w, httperror.New(404))
 }
 
-func run() error {
+func run(addr string) error {
 	var h http.Handler = http.HandlerFunc(duckhouseHandler)
 	h = combinedlog.WrapHandler(accessLogWriter, h)
 	h = authn.WrapHandler(h)
 	srv := &http.Server{
-		Addr:        "localhost:9998",
+		Addr:        addr,
 		Handler:     h,
 		ConnContext: conndb.ConnContext,
 		ConnState:   conndb.ConnState,
@@ -186,25 +198,27 @@ func run() error {
 	return srv.ListenAndServe()
 }
 
-var (
-	debugFlag bool
-	maxDB     int
-)
-
 func newDuckDB(ctx context.Context) (*sql.DB, error) {
 	return sql.Open("duckdb", "")
 }
 
 func main() {
+	var (
+		debugFlag bool
+		maxDB     int
+		addr      string
+	)
+
 	flag.BoolVar(&debugFlag, "debug", false, `enable debug log`)
 	flag.IntVar(&maxDB, "maxdb", 4, `maximum number of DB instances`)
+	flag.StringVar(&addr, "addr", "localhost:9998", `address hosts HTTP server`)
 	flag.Parse()
 	if debugFlag {
 		slog.SetLogLoggerLevel(slog.LevelDebug)
 	}
 	conndb.SetMaxDB(maxDB)
 	conndb.SetOpener(conndb.OpenerFunc(newDuckDB))
-	if err := run(); err != nil {
+	if err := run(addr); err != nil {
 		slog.Error("server terminated", "error", err)
 	}
 }
