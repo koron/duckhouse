@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"iter"
 	"log/slog"
 	"math/rand/v2"
 	"net"
@@ -132,4 +133,12 @@ func (m *Manager) GetDB(ctx context.Context) (*sql.DB, ID, error) {
 	m.dbCount++
 	slog.Debug("DB opened", "connID", id, "DB", dbToStr(db), "count", m.dbCount)
 	return db, id, nil
+}
+
+func (m *Manager) Databases() iter.Seq2[ID, *sql.DB] {
+	return func(yield func(ID, *sql.DB) bool) {
+		m.idToDB.Range(func(key, value any) bool {
+			return yield(key.(ID), value.(*sql.DB))
+		})
+	}
 }
