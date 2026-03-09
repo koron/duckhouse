@@ -80,7 +80,7 @@ func writeLog(w io.Writer, ww *wrapWriter, r *http.Request) {
 		query = ww.queryReport.query
 		duration = ww.queryReport.duration.String()
 	}
-	fmt.Fprintf(w, "%s %s [%s] %q %q %q %d %d %s %q %s\n", remoteAddr, authnID, timestamp, requestLine, referer, userAgent, ww.status, ww.bsize, connID, query, duration)
+	fmt.Fprintf(w, "%s %q [%s] %q %q %q %d %d %s %q %s\n", remoteAddr, authnID, timestamp, requestLine, referer, userAgent, ww.status, ww.bsize, connID, query, duration)
 }
 
 func WrapHandler(logWriter io.Writer, h http.Handler) http.Handler {

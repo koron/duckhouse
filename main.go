@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/csv"
 	"errors"
@@ -190,6 +191,10 @@ var (
 	maxDB     int
 )
 
+func newDuckDB(ctx context.Context) (*sql.DB, error) {
+	return sql.Open("duckdb", "")
+}
+
 func main() {
 	flag.BoolVar(&debugFlag, "debug", false, `enable debug log`)
 	flag.IntVar(&maxDB, "maxdb", 4, `maximum number of DB instances`)
@@ -198,6 +203,7 @@ func main() {
 		slog.SetLogLoggerLevel(slog.LevelDebug)
 	}
 	conndb.SetMaxDB(maxDB)
+	conndb.SetOpener(conndb.OpenerFunc(newDuckDB))
 	if err := run(); err != nil {
 		slog.Error("server terminated", "error", err)
 	}

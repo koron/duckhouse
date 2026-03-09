@@ -13,7 +13,8 @@ import (
 )
 
 type Manager struct {
-	MaxDB int
+	MaxDB  int
+	Opener Opener
 
 	idSet    sync.Map
 	connToID sync.Map
@@ -21,6 +22,16 @@ type Manager struct {
 
 	dbCount int
 	dbMutex sync.Mutex
+}
+
+type Opener interface {
+	Open(ctx context.Context) (*sql.DB, error)
+}
+
+type OpenerFunc func(ctx context.Context) (*sql.DB, error)
+
+func (fn OpenerFunc) Open(ctx context.Context) (*sql.DB, error) {
+	return fn(ctx)
 }
 
 type ID uint32
@@ -85,6 +96,7 @@ func (m *Manager) closeConn(c net.Conn) error {
 var (
 	ErrNoConnection = errors.New("no connections assigned for the context")
 	ErrMaxDB        = errors.New("reached maximum number of DB")
+	ErrNoOpener     = errors.New("no Opener specified")
 )
 
 func (m *Manager) GetID(ctx context.Context) (ID, bool) {
@@ -107,7 +119,10 @@ func (m *Manager) GetDB(ctx context.Context) (*sql.DB, ID, error) {
 	if m.dbCount >= m.MaxDB {
 		return nil, 0, ErrMaxDB
 	}
-	db, err := sql.Open("duckdb", "")
+	if m.Opener == nil {
+		return nil, 0, ErrNoOpener
+	}
+	db, err := m.Opener.Open(ctx)
 	if err != nil {
 		return nil, 0, err
 	}

@@ -15,6 +15,10 @@ func SetMaxDB(n int) {
 	Default.MaxDB = n
 }
 
+func SetOpener(opener Opener) {
+	Default.Opener = opener
+}
+
 func ConnContext(ctx context.Context, c net.Conn) context.Context {
 	return Default.ConnContext(ctx, c)
 }
