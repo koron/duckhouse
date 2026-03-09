@@ -125,7 +125,7 @@ func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) error {
 		return httperror.Newf(400, "No queries: %s", err)
 	}
 
-	db, id, err := connMan.GetDB(r.Context())
+	db, id, err := conndb.GetDB(r.Context())
 	if err != nil {
 		if errors.Is(err, conndb.ErrMaxDB) {
 			return httperror.Newf(429, err.Error())
@@ -171,8 +171,6 @@ func duckhouseHandler(w http.ResponseWriter, r *http.Request) {
 	httperror.Write(w, httperror.New(404))
 }
 
-var connMan *conndb.Manager
-
 func run() error {
 	var h http.Handler = http.HandlerFunc(duckhouseHandler)
 	h = combinedlog.WrapHandler(accessLogWriter, h)
@@ -180,8 +178,8 @@ func run() error {
 	srv := &http.Server{
 		Addr:        "localhost:9998",
 		Handler:     h,
-		ConnContext: connMan.ConnContext,
-		ConnState:   connMan.ConnState,
+		ConnContext: conndb.ConnContext,
+		ConnState:   conndb.ConnState,
 	}
 	slog.Info("listening on", "addr", srv.Addr)
 	return srv.ListenAndServe()
@@ -199,9 +197,7 @@ func main() {
 	if debugFlag {
 		slog.SetLogLoggerLevel(slog.LevelDebug)
 	}
-	connMan = &conndb.Manager{
-		MaxDB: maxDB,
-	}
+	conndb.SetMaxDB(maxDB)
 	if err := run(); err != nil {
 		slog.Error("server terminated", "error", err)
 	}

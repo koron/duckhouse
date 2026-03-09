@@ -23,15 +23,15 @@ type Manager struct {
 	dbMutex sync.Mutex
 }
 
-type ID uint64
+type ID uint32
 
 func (id ID) String() string {
-	return fmt.Sprintf("%016x", uint64(id))
+	return fmt.Sprintf("%08x", uint32(id))
 }
 
 func (m *Manager) newID(c net.Conn) ID {
 	for {
-		id := ID(rand.Uint64())
+		id := ID(rand.Uint32())
 		_, ok := m.idSet.LoadOrStore(id, true)
 		if !ok {
 			m.connToID.Store(c, id)
@@ -86,6 +86,11 @@ var (
 	ErrNoConnection = errors.New("no connections assigned for the context")
 	ErrMaxDB        = errors.New("reached maximum number of DB")
 )
+
+func (m *Manager) GetID(ctx context.Context) (ID, bool) {
+	id, ok := ctx.Value(connIDKey{}).(ID)
+	return id, ok
+}
 
 func (m *Manager) GetDB(ctx context.Context) (*sql.DB, ID, error) {
 	id, ok := ctx.Value(connIDKey{}).(ID)
