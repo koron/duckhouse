@@ -9,118 +9,23 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math/rand/v2"
-	"net"
 	"net/http"
 	"os"
 	"strings"
-	"sync"
+	"time"
 
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/koron/duckhouse/internal/authn"
 	"github.com/koron/duckhouse/internal/combinedlog"
+	"github.com/koron/duckhouse/internal/conndb"
 	"github.com/koron/duckhouse/internal/httperror"
 )
 
 var (
-	idSet    sync.Map
-	connToID sync.Map
-	idToDB   sync.Map
-
-	dbCount int
-	dbMutex sync.Mutex
-
 	accessLogWriter io.Writer = os.Stdout
 
 	nullStr = "NULL"
 )
-
-type connID uint64
-
-func (id connID) String() string {
-	return fmt.Sprintf("%016x", uint64(id))
-}
-
-func duckhouseNewConnID(c net.Conn) connID {
-	for {
-		id := connID(rand.Uint64())
-		_, ok := idSet.LoadOrStore(id, true)
-		if !ok {
-			connToID.Store(c, id)
-			return id
-		}
-	}
-}
-
-func dbToLogArg(db *sql.DB) string {
-	return fmt.Sprintf("%p", db)
-}
-
-var errMaxDB = errors.New("reached maximum number of DB")
-
-func duckhouseGetDB(r *http.Request) (*sql.DB, connID, error) {
-	id, ok := r.Context().Value(connIDKey{}).(connID)
-	if !ok {
-		return nil, 0, fmt.Errorf("no connection ID assigned for request:%v", r)
-	}
-	rawdb, ok := idToDB.Load(id)
-	if ok {
-		return rawdb.(*sql.DB), id, nil
-	}
-	// Create a new database for the connection
-	dbMutex.Lock()
-	defer dbMutex.Unlock()
-	if dbCount >= maxDB {
-		return nil, 0, errMaxDB
-	}
-	db, err := sql.Open("duckdb", "")
-	if err != nil {
-		return nil, 0, err
-	}
-	db.SetMaxIdleConns(0)
-	idToDB.Store(id, db)
-	dbCount++
-	slog.Debug("DB opened", "connID", id, "DB", dbToLogArg(db), "count", dbCount)
-	return db, id, nil
-}
-
-type connIDKey = struct{}
-
-func duckhouseConnContext(ctx context.Context, c net.Conn) context.Context {
-	id := duckhouseNewConnID(c)
-	return context.WithValue(ctx, connIDKey{}, id)
-}
-
-func duckhouseCloseConn(c net.Conn) error {
-	rawid, ok := connToID.LoadAndDelete(c)
-	if !ok {
-		return fmt.Errorf("no ID for net.Conn=%p", c)
-	}
-	dbMutex.Lock()
-	defer dbMutex.Unlock()
-	id := rawid.(connID)
-	idSet.Delete(id)
-	rawdb, ok := idToDB.LoadAndDelete(id)
-	if !ok {
-		return nil
-	}
-	db := rawdb.(*sql.DB)
-	db.Close()
-	if dbCount > 0 {
-		dbCount--
-	}
-	slog.Debug("DB closed", "connID", id, "DB", dbToLogArg(db), "count", dbCount)
-	return nil
-}
-
-func duckhouseConnState(c net.Conn, s http.ConnState) {
-	if s == http.StateClosed {
-		err := duckhouseCloseConn(c)
-		if err != nil {
-			slog.Warn("failed to close DB", "error", err)
-		}
-	}
-}
 
 func readQuery(r *http.Request) (string, error) {
 	b, err := io.ReadAll(r.Body)
@@ -221,15 +126,16 @@ func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) error {
 		return httperror.Newf(400, "No queries: %s", err)
 	}
 
-	db, id, err := duckhouseGetDB(r)
+	db, id, err := conndb.GetDB(r.Context())
 	if err != nil {
-		if err == errMaxDB {
+		if errors.Is(err, conndb.ErrMaxDB) {
 			return httperror.Newf(429, err.Error())
 		}
 		return httperror.Newf(500, "No associated DB: %s", err)
 	}
 	w.Header().Set("Duckhouse-Connectionid", id.String())
 	slog.Debug("queried", "connID", id, "query", query)
+	start := time.Now()
 	rows, err := db.QueryContext(r.Context(), query)
 	if err != nil {
 		if _, ok := err.(*duckdb.Error); !ok {
@@ -238,6 +144,10 @@ func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) error {
 		return httperror.Newf(400, "Query error: %s", err)
 	}
 	defer rows.Close()
+	dur := time.Since(start)
+	if r, ok := w.(combinedlog.QueryReporter); ok {
+		r.QueryReport(query, dur)
+	}
 
 	err = writeAsCSV(w, rows)
 	if err != nil {
@@ -269,8 +179,8 @@ func run() error {
 	srv := &http.Server{
 		Addr:        "localhost:9998",
 		Handler:     h,
-		ConnContext: duckhouseConnContext,
-		ConnState:   duckhouseConnState,
+		ConnContext: conndb.ConnContext,
+		ConnState:   conndb.ConnState,
 	}
 	slog.Info("listening on", "addr", srv.Addr)
 	return srv.ListenAndServe()
@@ -281,6 +191,10 @@ var (
 	maxDB     int
 )
 
+func newDuckDB(ctx context.Context) (*sql.DB, error) {
+	return sql.Open("duckdb", "")
+}
+
 func main() {
 	flag.BoolVar(&debugFlag, "debug", false, `enable debug log`)
 	flag.IntVar(&maxDB, "maxdb", 4, `maximum number of DB instances`)
@@ -288,6 +202,8 @@ func main() {
 	if debugFlag {
 		slog.SetLogLoggerLevel(slog.LevelDebug)
 	}
+	conndb.SetMaxDB(maxDB)
+	conndb.SetOpener(conndb.OpenerFunc(newDuckDB))
 	if err := run(); err != nil {
 		slog.Error("server terminated", "error", err)
 	}
