@@ -128,6 +128,9 @@ func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) error {
 
 	// Execute a query
 	db, id, err := conndb.GetDB(r.Context())
+	if id != 0 {
+		w.Header().Set("Duckhouse-Connectionid", id.String())
+	}
 	if err != nil {
 		if errors.Is(err, conndb.ErrMaxDB) {
 			return httperror.Newf(429, err.Error())
@@ -136,6 +139,11 @@ func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) error {
 	}
 	start := time.Now()
 	rows, err := db.QueryContext(r.Context(), query)
+	dur := time.Since(start)
+	if r, ok := w.(combinedlog.QueryReporter); ok {
+		r.QueryReport(query, dur)
+	}
+	w.Header().Set("Duckhouse-Duration", dur.String())
 	if err != nil {
 		if _, ok := err.(*duckdb.Error); !ok {
 			return httperror.Newf(500, "DB error: %s", err)
@@ -143,12 +151,6 @@ func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) error {
 		return httperror.Newf(400, "Query error: %s", err)
 	}
 	defer rows.Close()
-	dur := time.Since(start)
-	if r, ok := w.(combinedlog.QueryReporter); ok {
-		r.QueryReport(query, dur)
-	}
-	w.Header().Set("Duckhouse-Connectionid", id.String())
-	w.Header().Set("Duckhouse-Duration", dur.String())
 
 	// Write the response body
 	err = writeAsCSV(w, rows)
