@@ -8,6 +8,10 @@ import (
 	"github.com/koron/duckhouse/internal/formatter"
 )
 
+const (
+	nullStrDefault = "NULL"
+)
+
 func init() {
 	formatter.Register(&Factory{}, "csv")
 }
@@ -15,11 +19,11 @@ func init() {
 type Factory struct {
 }
 
+var _ formatter.Factory = (*Factory)(nil)
+
 func (f *Factory) ContentType() string {
 	return "text/csv"
 }
-
-const nullStrDefault = "NULL"
 
 func (f *Factory) Create(w io.Writer, params map[string]string) (formatter.Writer, error) {
 	ww := csv.NewWriter(w)
@@ -33,8 +37,6 @@ func (f *Factory) Create(w io.Writer, params map[string]string) (formatter.Write
 		nullStr: nullStr,
 	}, nil
 }
-
-var _ formatter.Factory = (*Factory)(nil)
 
 type Writer struct {
 	w       *csv.Writer
