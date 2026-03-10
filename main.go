@@ -18,6 +18,7 @@ import (
 	"github.com/koron/duckhouse/internal/authn"
 	"github.com/koron/duckhouse/internal/combinedlog"
 	"github.com/koron/duckhouse/internal/conndb"
+	"github.com/koron/duckhouse/internal/duckdbinit"
 	"github.com/koron/duckhouse/internal/httperror"
 )
 
@@ -201,7 +202,15 @@ func run(addr string) error {
 }
 
 func newDuckDB(ctx context.Context) (*sql.DB, error) {
-	return sql.Open("duckdb", "")
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return nil, err
+	}
+	if err := duckdbinit.Init(ctx, db); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return db, nil
 }
 
 func main() {
@@ -209,17 +218,28 @@ func main() {
 		debugFlag bool
 		maxDB     int
 		addr      string
+
+		dbThreads      int
+		dbMemoryLimiit string
 	)
 
 	flag.BoolVar(&debugFlag, "debug", false, `enable debug log`)
 	flag.IntVar(&maxDB, "maxdb", 4, `maximum number of DB instances`)
 	flag.StringVar(&addr, "addr", "localhost:9998", `address hosts HTTP server`)
+	flag.IntVar(&dbThreads, "db.threads", 1, `initial value of DB "threads"`)
+	flag.StringVar(&dbMemoryLimiit, "db.memorylimit", "1GiB", `initial value of DB "memory_limit"`)
 	flag.Parse()
 	if debugFlag {
 		slog.SetLogLoggerLevel(slog.LevelDebug)
 	}
 	conndb.SetMaxDB(maxDB)
 	conndb.SetOpener(conndb.OpenerFunc(newDuckDB))
+	if dbThreads > 0 {
+		duckdbinit.DefaultSettings.Threads = &dbThreads
+	}
+	if dbMemoryLimiit != "" {
+		duckdbinit.DefaultSettings.MemoryLimit = &dbMemoryLimiit
+	}
 	if err := run(addr); err != nil {
 		slog.Error("server terminated", "error", err)
 	}
