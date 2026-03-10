@@ -54,10 +54,7 @@ func blobToStr(v any) string {
 	return string(v.([]uint8))
 }
 
-func writeAsCSV(w http.ResponseWriter, rows *sql.Rows) error {
-	w.Header().Set("Content-Type", "text/csv")
-	w.WriteHeader(200)
-
+func writeAsCSV(w io.Writer, rows *sql.Rows) error {
 	ww := csv.NewWriter(w)
 
 	for {
@@ -154,6 +151,8 @@ func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) error {
 	defer rows.Close()
 
 	// Write the response body
+	w.Header().Set("Content-Type", "text/csv")
+	w.WriteHeader(200)
 	err = writeAsCSV(w, rows)
 	if err != nil {
 		return httperror.Newf(500, "Serialization error: %s", err)
