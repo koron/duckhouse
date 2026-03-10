@@ -18,7 +18,15 @@ func GetSettings(ctx context.Context) *Settings {
 // Init initializes a DB instance with parameters associated with the context.
 func Init(ctx context.Context, db *sql.DB) error {
 	s := GetSettings(ctx)
-	return s.Apply(ctx, db)
+	if err := s.apply(ctx, db); err != nil {
+		return err
+	}
+	if InitQuery != "" {
+		if _, err := db.ExecContext(ctx, InitQuery); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type Settings struct {
@@ -26,7 +34,7 @@ type Settings struct {
 	MemoryLimit *string
 }
 
-func (s *Settings) Apply(ctx context.Context, db *sql.DB) error {
+func (s *Settings) apply(ctx context.Context, db *sql.DB) error {
 	// Limit the resources used by a DuckDB instance.
 	if s.Threads != nil {
 		_, err := db.ExecContext(ctx, "SET threads = ?", *s.Threads)
@@ -44,3 +52,5 @@ func (s *Settings) Apply(ctx context.Context, db *sql.DB) error {
 }
 
 var DefaultSettings Settings
+
+var InitQuery string
