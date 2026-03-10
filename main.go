@@ -187,7 +187,32 @@ func duckhouseHandler(w http.ResponseWriter, r *http.Request) {
 	httperror.Write(w, httperror.New(404))
 }
 
+func newDuckDB(ctx context.Context) (*sql.DB, error) {
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return nil, err
+	}
+	if err := duckdbinit.Init(ctx, db); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return db, nil
+}
+
+func checkDB(ctx context.Context) error {
+	db, err := newDuckDB(ctx)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	return db.PingContext(ctx)
+}
+
 func run(addr string) error {
+	err := checkDB(context.Background())
+	if err != nil {
+		return err
+	}
 	var h http.Handler = http.HandlerFunc(duckhouseHandler)
 	h = combinedlog.WrapHandler(accessLogWriter, h)
 	h = authn.WrapHandler(h)
@@ -201,26 +226,28 @@ func run(addr string) error {
 	return srv.ListenAndServe()
 }
 
-func newDuckDB(ctx context.Context) (*sql.DB, error) {
-	db, err := sql.Open("duckdb", "")
+func stringOrReadFile(s, purpose string) (string, error) {
+	if !strings.HasPrefix(s, "@") {
+		return s, nil
+	}
+	b, err := os.ReadFile(s[1:])
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	if err := duckdbinit.Init(ctx, db); err != nil {
-		db.Close()
-		return nil, err
-	}
-	return db, nil
+	slog.Debug("read file", "purpose", purpose, "name", s[1:])
+	return string(b), nil
 }
 
 func main() {
 	var (
 		debugFlag bool
-		maxDB     int
-		addr      string
+
+		maxDB int
+		addr  string
 
 		dbThreads      int
 		dbMemoryLimiit string
+		dbInitQuery    string
 	)
 
 	flag.BoolVar(&debugFlag, "debug", false, `enable debug log`)
@@ -228,19 +255,33 @@ func main() {
 	flag.StringVar(&addr, "addr", "localhost:9998", `address hosts HTTP server`)
 	flag.IntVar(&dbThreads, "db.threads", 1, `initial value of DB "threads"`)
 	flag.StringVar(&dbMemoryLimiit, "db.memorylimit", "1GiB", `initial value of DB "memory_limit"`)
+	flag.StringVar(&dbInitQuery, "db.initquery", "", `DB initialization query or file (prefixed with '@')`)
 	flag.Parse()
+
 	if debugFlag {
 		slog.SetLogLoggerLevel(slog.LevelDebug)
 	}
+
 	conndb.SetMaxDB(maxDB)
 	conndb.SetOpener(conndb.OpenerFunc(newDuckDB))
+
 	if dbThreads > 0 {
 		duckdbinit.DefaultSettings.Threads = &dbThreads
 	}
 	if dbMemoryLimiit != "" {
 		duckdbinit.DefaultSettings.MemoryLimit = &dbMemoryLimiit
 	}
+	if dbInitQuery != "" {
+		q, err := stringOrReadFile(dbInitQuery, "db.initquery")
+		if err != nil {
+			slog.Error("db.initquery failuare", "error", err)
+			os.Exit(1)
+		}
+		duckdbinit.InitQuery = q
+	}
+
 	if err := run(addr); err != nil {
 		slog.Error("server terminated", "error", err)
+		os.Exit(1)
 	}
 }
