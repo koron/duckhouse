@@ -6,10 +6,11 @@ import (
 
 	"github.com/koron/duckhouse/internal/formatter"
 	"github.com/olekukonko/tablewriter"
+	"github.com/olekukonko/tablewriter/renderer"
 )
 
 func init() {
-	formatter.Register(&Factory{}, "table")
+	formatter.Register(&Factory{}, "markdown")
 }
 
 type Factory struct {
@@ -18,11 +19,12 @@ type Factory struct {
 var _ formatter.Factory = (*Factory)(nil)
 
 func (f *Factory) ContentType() string {
-	return "text/plain"
+	return "text/markdown"
 }
 
 func (f *Factory) Create(w io.Writer, params map[string]string) (formatter.Writer, error) {
 	var opts []tablewriter.Option
+	opts = append(opts, tablewriter.WithRenderer(renderer.NewMarkdown()))
 	// FIXME: Apply params
 	table := tablewriter.NewTable(w, opts...)
 	return &Writer{
