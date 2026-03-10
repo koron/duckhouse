@@ -24,14 +24,16 @@ func (f *Factory) ContentType() string {
 func (f *Factory) Create(w io.Writer, params map[string]string) (formatter.Writer, error) {
 	var opts []tablewriter.Option
 	// FIXME: Apply params
-	table := tablewriter.NewTable(w, opts...)
-	return &Writer{
-		t: table,
-	}, nil
+	tw := tablewriter.NewTable(w, opts...)
+	return NewWriter(tw)
 }
 
 type Writer struct {
-	t *tablewriter.Table
+	tw *tablewriter.Table
+}
+
+func NewWriter(tw *tablewriter.Table) (*Writer, error) {
+	return &Writer{tw: tw}, nil
 }
 
 var _ formatter.Writer = (*Writer)(nil)
@@ -41,14 +43,14 @@ func (w *Writer) WriteHeader(columnTypes []*sql.ColumnType) error {
 	for i, typ := range columnTypes {
 		elements[i] = typ.Name()
 	}
-	w.t.Header(elements)
+	w.tw.Header(elements)
 	return nil
 }
 
 func (w *Writer) WriteBody(values []any) error {
-	return w.t.Append(values)
+	return w.tw.Append(values)
 }
 
 func (w *Writer) Flush() error {
-	return w.t.Render()
+	return w.tw.Render()
 }
