@@ -89,5 +89,4 @@ func WrapHandler(logWriter io.Writer, h http.Handler) http.Handler {
 		h.ServeHTTP(ww, r)
 		writeLog(logWriter, ww, r)
 	})
-	return nil
 }

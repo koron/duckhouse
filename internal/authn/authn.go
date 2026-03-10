@@ -26,7 +26,6 @@ func WrapHandler(h http.Handler) http.Handler {
 		}
 		h.ServeHTTP(w, r)
 	})
-	return nil
 }
 
 func AuthnID(r *http.Request) ID {

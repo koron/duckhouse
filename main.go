@@ -3,10 +3,8 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/csv"
 	"errors"
 	"flag"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -19,13 +17,14 @@ import (
 	"github.com/koron/duckhouse/internal/combinedlog"
 	"github.com/koron/duckhouse/internal/conndb"
 	"github.com/koron/duckhouse/internal/duckdbinit"
+	"github.com/koron/duckhouse/internal/formatter"
 	"github.com/koron/duckhouse/internal/httperror"
 )
 
 var (
 	accessLogWriter io.Writer = os.Stdout
 
-	nullStr = "NULL"
+	defaultFormat = "csv"
 )
 
 func readQuery(r *http.Request) (string, error) {
@@ -46,76 +45,62 @@ func readQuery(r *http.Request) (string, error) {
 	return "", errors.New("no queries")
 }
 
-func anyToStr(v any) string {
-	return fmt.Sprint(v)
+func parseFormat(r *http.Request) (format string, params map[string]string) {
+	q := r.URL.Query()
+	format = q.Get("format")
+	if format == "" {
+		format = q.Get("f")
+	}
+	parts := strings.Split(format, ",")
+	if parts[0] == "" {
+		parts[0] = defaultFormat
+	}
+	// Parse parameters
+	params = map[string]string{}
+	for _, s := range parts[1:] {
+		p := strings.SplitN(s, ":", 2)
+		if p[0] == "" {
+			continue
+		}
+		if len(p) == 1 {
+			params[p[0]] = ""
+			continue
+		}
+		params[p[0]] = p[1]
+	}
+	return parts[0], params
 }
 
-func blobToStr(v any) string {
-	return string(v.([]uint8))
-}
-
-func writeAsCSV(w http.ResponseWriter, rows *sql.Rows) error {
-	w.Header().Set("Content-Type", "text/csv")
-	w.WriteHeader(200)
-
-	ww := csv.NewWriter(w)
-
-	for {
-		// Write header
-		types, err := rows.ColumnTypes()
+func writeRows(fw formatter.Writer, rows *sql.Rows) error {
+	// Write the header
+	columnTypes, err := rows.ColumnTypes()
+	if err != nil {
+		return err
+	}
+	err = fw.WriteHeader(columnTypes)
+	if err != nil {
+		return err
+	}
+	// Prepare for scan
+	receivers := make([]any, len(columnTypes))
+	values := make([]any, len(columnTypes))
+	for i := range receivers {
+		receivers[i] = new(any)
+	}
+	for rows.Next() {
+		err := rows.Scan(receivers...)
 		if err != nil {
 			return err
 		}
-		// Choose the right stringification function depending on the type name
-		// in your database
-		strfuncs := make([]func(any) string, len(types))
-		records := make([]string, len(types))
-		for i, typ := range types {
-			records[i] = typ.Name()
-			switch typ.DatabaseTypeName() {
-			case "BLOB":
-				strfuncs[i] = blobToStr
-			default:
-				strfuncs[i] = anyToStr
-			}
-			// FIXME: support other special types
+		for i, pv := range receivers {
+			values[i] = *pv.(*any)
 		}
-		// Write the header
-		if len(types) > 0 {
-			err := ww.Write(records)
-			if err != nil {
-				return err
-			}
-		}
-		// Scan and write values (CSV body)
-		values := make([]any, len(types))
-		for i := range values {
-			values[i] = new(any)
-		}
-		for rows.Next() {
-			err := rows.Scan(values...)
-			if err != nil {
-				return err
-			}
-			for i, pv := range values {
-				v := *pv.(*any)
-				if v == nil {
-					records[i] = nullStr
-					continue
-				}
-				records[i] = strfuncs[i](v)
-			}
-			if err := ww.Write(records); err != nil {
-				return err
-			}
-		}
-		if !rows.NextResultSet() {
-			break
+		err = fw.WriteBody(values)
+		if err != nil {
+			return err
 		}
 	}
-
-	ww.Flush()
-	return nil
+	return fw.Flush()
 }
 
 func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) error {
@@ -125,6 +110,18 @@ func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) error {
 	query, err := readQuery(r)
 	if err != nil {
 		return httperror.Newf(400, "No queries: %s", err)
+	}
+
+	// determine format from the request
+	format, params := parseFormat(r)
+	slog.Debug("parsed format", "format", format, "params", params)
+	factory, ok := formatter.Find(format)
+	if !ok {
+		return httperror.Newf(400, "Unsupported format: %s", format)
+	}
+	fw, err := factory.Create(w, params)
+	if err != nil {
+		return httperror.Newf(400, "Invalid parameters for the format: %s params=%+v", format, params)
 	}
 
 	// Execute a query
@@ -154,7 +151,9 @@ func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) error {
 	defer rows.Close()
 
 	// Write the response body
-	err = writeAsCSV(w, rows)
+	w.Header().Set("Content-Type", factory.ContentType())
+	w.WriteHeader(200)
+	err = writeRows(fw, rows)
 	if err != nil {
 		return httperror.Newf(500, "Serialization error: %s", err)
 	}
