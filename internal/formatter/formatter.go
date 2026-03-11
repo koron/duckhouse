@@ -37,6 +37,7 @@ func Find(name string) (Factory, bool) {
 }
 
 var (
+	ErrWithoutFactory  = errors.New("made without a factory")
 	ErrNoHeaderWritten = errors.New("no headers written")
 	ErrCountMismatch   = errors.New("header and body count mismatch")
 )
@@ -47,4 +48,11 @@ func AnyToStr(v any) string {
 
 func BlobToStr(v any) string {
 	return string(v.([]uint8))
+}
+
+func Get(params map[string]string, name, defaultValue string) string {
+	if s, ok := params[name]; ok {
+		return s
+	}
+	return defaultValue
 }
