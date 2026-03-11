@@ -71,7 +71,10 @@ func parseFormat(r *http.Request) (format string, params map[string]string) {
 	return parts[0], params
 }
 
-func writeRows(fw formatter.Writer, rows *sql.Rows) error {
+func writeRows(ctx context.Context, fw formatter.Writer, rows *sql.Rows) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	// Write the header
 	columnTypes, err := rows.ColumnTypes()
 	if err != nil {
@@ -81,6 +84,9 @@ func writeRows(fw formatter.Writer, rows *sql.Rows) error {
 	if err != nil {
 		return err
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	// Prepare for scan
 	receivers := make([]any, len(columnTypes))
 	values := make([]any, len(columnTypes))
@@ -88,6 +94,9 @@ func writeRows(fw formatter.Writer, rows *sql.Rows) error {
 		receivers[i] = new(any)
 	}
 	for rows.Next() {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		err := rows.Scan(receivers...)
 		if err != nil {
 			return err
@@ -124,8 +133,11 @@ func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) error {
 		return httperror.Newf(400, "Invalid parameters for the format: %s params=%+v", format, params)
 	}
 
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
 	// Execute a query
-	db, id, err := conndb.GetDB(r.Context())
+	db, id, err := conndb.GetDB(ctx)
 	if id != 0 {
 		w.Header().Set("Duckhouse-Connectionid", id.String())
 	}
@@ -136,7 +148,7 @@ func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) error {
 		return httperror.Newf(500, "No associated DB: %s", err)
 	}
 	start := time.Now()
-	rows, err := db.QueryContext(r.Context(), query)
+	rows, err := db.QueryContext(ctx, query)
 	dur := time.Since(start)
 	if r, ok := w.(combinedlog.QueryReporter); ok {
 		r.QueryReport(query, dur)
@@ -146,6 +158,9 @@ func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) error {
 		if _, ok := err.(*duckdb.Error); !ok {
 			return httperror.Newf(500, "DB error: %s", err)
 		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.Canceled) {
+			return httperror.Newf(504, err.Error())
+		}
 		return httperror.Newf(400, "Query error: %s", err)
 	}
 	defer rows.Close()
@@ -153,7 +168,7 @@ func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) error {
 	// Write the response body
 	w.Header().Set("Content-Type", factory.ContentType())
 	w.WriteHeader(200)
-	err = writeRows(fw, rows)
+	err = writeRows(ctx, fw, rows)
 	if err != nil {
 		return httperror.Newf(500, "Serialization error: %s", err)
 	}
