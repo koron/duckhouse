@@ -136,7 +136,7 @@ func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	// Execute a query
+	// Determine database
 	db, id, err := conndb.GetDB(ctx)
 	if id != 0 {
 		w.Header().Set("Duckhouse-Connectionid", id.String())
@@ -147,6 +147,11 @@ func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) error {
 		}
 		return httperror.Newf(500, "No associated DB: %s", err)
 	}
+
+	// TODO: register an executing query.
+	// TODO: defer unregister an executing query.
+
+	// Execute a query
 	start := time.Now()
 	rows, err := db.QueryContext(ctx, query)
 	dur := time.Since(start)
