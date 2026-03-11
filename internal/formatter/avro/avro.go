@@ -1,4 +1,4 @@
-// Package avro proivdes "avro" formatter for duckhouse.
+// Package avro proivdes Apache Avro formatter for duckhouse.
 package avro
 
 import (
