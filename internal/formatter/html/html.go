@@ -1,4 +1,5 @@
-package table
+// Package html proivdes HTML formatter for duckhouse.
+package html
 
 import (
 	"io"

@@ -1,3 +1,4 @@
+// Package csv proivdes CSV formatter for duckhouse.
 package csv
 
 import (

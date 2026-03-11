@@ -1,3 +1,4 @@
+// Package formatter proivdes formatter framework for duckhouse.
 package formatter
 
 import (

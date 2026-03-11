@@ -1,3 +1,4 @@
+// Package conndb provides a per-connection database instance.
 package conndb
 
 import (

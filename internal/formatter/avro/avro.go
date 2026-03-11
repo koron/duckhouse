@@ -1,3 +1,4 @@
+// Package avro proivdes "avro" formatter for duckhouse.
 package avro
 
 import (

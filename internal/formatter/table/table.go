@@ -1,3 +1,4 @@
+// Package table proivdes plain text table formatter for duckhouse.
 package table
 
 import (

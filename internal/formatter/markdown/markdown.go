@@ -1,4 +1,5 @@
-package table
+// Package markdown proivdes Markdown formatter for duckhouse.
+package markdown
 
 import (
 	"io"

@@ -1,4 +1,5 @@
-package _template
+// Package {{.packageName}} proivdes {{.name}} formatter for duckhouse.
+package {{.packageName}}
 
 import (
 	"database/sql"

@@ -1,3 +1,4 @@
+// Package authn provides authentication information binding to the request.
 package authn
 
 import (

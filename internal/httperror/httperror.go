@@ -1,3 +1,5 @@
+// Package httperror provides error structure that can be used as HTTP error
+// responses.
 package httperror
 
 import (

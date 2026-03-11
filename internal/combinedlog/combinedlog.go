@@ -1,3 +1,4 @@
+// Package combinedlog provides access log for duckhouse
 package combinedlog
 
 import (
