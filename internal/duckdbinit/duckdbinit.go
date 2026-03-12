@@ -57,52 +57,36 @@ type Settings struct {
 	LockConfig bool
 }
 
+// apply applies limits for the resources used by a DuckDB instance.
 func (s *Settings) apply(ctx context.Context, db *sql.DB) error {
 	// NOTE: home_directory show be specified in DSN
-	// Limit the resources used by a DuckDB instance.
-	if s.Threads != 0 {
-		_, err := db.ExecContext(ctx, "SET threads = ?", s.Threads)
-		if err != nil {
-			return err
-		}
+	ex := &execContext{ctx: ctx, db: db}
+	set(ex, "threads", s.Threads)
+	set(ex, "memory_limit", s.MemoryLimit)
+	set(ex, "extension_directory", s.ExtensionDir)
+	set(ex, "secret_directory", s.SecretDir)
+	set(ex, "temp_directory", s.TempDir)
+	set(ex, "max_temp_directory_size", s.MaxTempDirSize)
+	set(ex, "lock_configuration", s.LockConfig)
+	return ex.err
+}
+
+type execContext struct {
+	ctx context.Context
+	db  *sql.DB
+	err error
+}
+
+func set[T comparable](ex *execContext, name string, v T) {
+	if ex.err != nil {
+		return
 	}
-	if s.MemoryLimit != "" {
-		_, err := db.ExecContext(ctx, "SET memory_limit = ?", s.MemoryLimit)
-		if err != nil {
-			return err
-		}
+	var zero T
+	if v == zero {
+		return
 	}
-	if s.ExtensionDir != "" {
-		_, err := db.ExecContext(ctx, "SET extension_directory = ?", s.ExtensionDir)
-		if err != nil {
-			return err
-		}
-	}
-	if s.SecretDir != "" {
-		_, err := db.ExecContext(ctx, "SET secret_directory = ?", s.SecretDir)
-		if err != nil {
-			return err
-		}
-	}
-	if s.TempDir != "" {
-		_, err := db.ExecContext(ctx, "SET temp_directory = ?", s.TempDir)
-		if err != nil {
-			return err
-		}
-	}
-	if s.MaxTempDirSize != "" {
-		_, err := db.ExecContext(ctx, "SET max_temp_directory_size = ?", s.MaxTempDirSize)
-		if err != nil {
-			return err
-		}
-	}
-	if s.LockConfig {
-		_, err := db.ExecContext(ctx, "SET lock_configuration = ?", s.LockConfig)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	_, err := ex.db.ExecContext(ex.ctx, "SET "+name+" = ?", v)
+	ex.err = err
 }
 
 var DefaultSettings Settings
