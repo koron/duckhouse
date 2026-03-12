@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"flag"
 	"io"
@@ -113,7 +114,7 @@ func writeRows(ctx context.Context, fw formatter.Writer, rows *sql.Rows) error {
 	return fw.Flush()
 }
 
-func duckhouseHandleQuery(w http.ResponseWriter, r *http.Request) error {
+func handuleQuery(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != "GET" && r.Method != "POST" {
 		return httperror.New(404)
 	}
@@ -191,9 +192,32 @@ func matchPath(r *http.Request, path string) bool {
 	return false
 }
 
+type Status struct {
+	ID    string      `json:"ID"`
+	Stats sql.DBStats `json:"Stats"`
+}
+
+func handleStatus(w http.ResponseWriter, r *http.Request) error {
+	w.Header().Set("Content-Type", "application/jsonlines")
+	w.WriteHeader(200)
+	enc := json.NewEncoder(w)
+	var s Status
+	for id, db := range conndb.Default.Databases() {
+		s.ID = id.String()
+		s.Stats = db.Stats()
+		if err := enc.Encode(s); err != nil {
+			return err
+		}
+		if _, err := w.Write([]byte("\n")); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func duckhouseHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/" {
-		err := duckhouseHandleQuery(w, r)
+		err := handuleQuery(w, r)
 		if err != nil {
 			httperror.Write(w, err)
 		}
@@ -202,6 +226,13 @@ func duckhouseHandler(w http.ResponseWriter, r *http.Request) {
 	if matchPath(r, "/ping") {
 		w.WriteHeader(200)
 		w.Write([]byte("OK\r\n"))
+		return
+	}
+	if matchPath(r, "/status") {
+		err := handleStatus(w, r)
+		if err != nil {
+			httperror.Write(w, err)
+		}
 		return
 	}
 	httperror.Write(w, httperror.New(404))
