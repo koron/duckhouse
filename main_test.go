@@ -53,6 +53,14 @@ func startServer0(t *testing.T) *httptest.Server {
 	return ts
 }
 
+func doGet(ts *httptest.Server, path string) (*http.Response, error) {
+	return ts.Client().Get(ts.URL + path)
+}
+
+func doPost(ts *httptest.Server, path, body string) (*http.Response, error) {
+	return ts.Client().Post(ts.URL+path, "", strings.NewReader(body))
+}
+
 func readResponse(r *http.Response, err error) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("http failed: %w", err)
@@ -71,7 +79,7 @@ func readResponse(r *http.Response, err error) (string, error) {
 // testQuery0 checks CSV the response for the query.
 func testQuery0(t *testing.T, ts *httptest.Server, query, want string) {
 	t.Helper()
-	got, err := readResponse(ts.Client().Post(ts.URL+"/?f=csv", "", strings.NewReader(query)))
+	got, err := readResponse(doPost(ts, "/?f=csv", query))
 	if err != nil {
 		t.Error(err)
 		return
@@ -84,7 +92,7 @@ func testQuery0(t *testing.T, ts *httptest.Server, query, want string) {
 
 func TestPing(t *testing.T) {
 	ts := startServer0(t)
-	got, err := readResponse(ts.Client().Get(ts.URL + "/ping"))
+	got, err := readResponse(doGet(ts, "/ping/"))
 	if err != nil {
 		t.Error(err)
 		return
