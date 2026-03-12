@@ -220,17 +220,21 @@ func checkDB(ctx context.Context) error {
 	return db.PingContext(ctx)
 }
 
+func newDuckhouseHandler(w io.Writer) http.Handler {
+	var h http.Handler = http.HandlerFunc(duckhouseHandler)
+	h = combinedlog.WrapHandler(w, h)
+	h = authn.WrapHandler(h)
+	return h
+}
+
 func run(addr string) error {
 	err := checkDB(context.Background())
 	if err != nil {
 		return err
 	}
-	var h http.Handler = http.HandlerFunc(duckhouseHandler)
-	h = combinedlog.WrapHandler(accessLogWriter, h)
-	h = authn.WrapHandler(h)
 	srv := &http.Server{
 		Addr:        addr,
-		Handler:     h,
+		Handler:     newDuckhouseHandler(accessLogWriter),
 		ConnContext: conndb.ConnContext,
 		ConnState:   conndb.ConnState,
 	}
