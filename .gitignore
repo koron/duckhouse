@@ -3,5 +3,7 @@ default.pgo
 tags
 tmp/
 
+.duckdb/
+
 *.exe
 duckhouse
