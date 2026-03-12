@@ -114,7 +114,7 @@ func writeRows(ctx context.Context, fw formatter.Writer, rows *sql.Rows) error {
 	return fw.Flush()
 }
 
-func handuleQuery(w http.ResponseWriter, r *http.Request) error {
+func handleQuery(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != "GET" && r.Method != "POST" {
 		return httperror.New(404)
 	}
@@ -165,7 +165,7 @@ func handuleQuery(w http.ResponseWriter, r *http.Request) error {
 		if _, ok := err.(*duckdb.Error); !ok {
 			return httperror.Newf(500, "DB error: %s", err)
 		}
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.Canceled) {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return httperror.Newf(504, err.Error())
 		}
 		return httperror.Newf(400, "Query error: %s", err)
@@ -182,19 +182,15 @@ func handuleQuery(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func matchPath(r *http.Request, path string) bool {
-	if r.URL.Path == path {
-		return true
-	}
-	if len(path) > 0 && path[len(path)-1] != '/' && strings.HasPrefix(r.URL.Path, path+"/") {
-		return true
-	}
-	return false
-}
-
 type Status struct {
 	ID    string      `json:"ID"`
 	Stats sql.DBStats `json:"Stats"`
+}
+
+func handlePing(w http.ResponseWriter, r *http.Request) error {
+	w.WriteHeader(200)
+	w.Write([]byte("OK\r\n"))
+	return nil
 }
 
 func handleStatus(w http.ResponseWriter, r *http.Request) error {
@@ -215,29 +211,6 @@ func handleStatus(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func duckhouseHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/" {
-		err := handuleQuery(w, r)
-		if err != nil {
-			httperror.Write(w, err)
-		}
-		return
-	}
-	if matchPath(r, "/ping") {
-		w.WriteHeader(200)
-		w.Write([]byte("OK\r\n"))
-		return
-	}
-	if matchPath(r, "/status") {
-		err := handleStatus(w, r)
-		if err != nil {
-			httperror.Write(w, err)
-		}
-		return
-	}
-	httperror.Write(w, httperror.New(404))
-}
-
 func newDuckDB(ctx context.Context) (*sql.DB, error) {
 	return duckdbinit.Open(ctx)
 }
@@ -251,8 +224,21 @@ func checkDB(ctx context.Context) error {
 	return db.PingContext(ctx)
 }
 
+func errorAwareHandler(handle func(http.ResponseWriter, *http.Request) error) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		err := handle(w, r)
+		if err != nil {
+			httperror.Write(w, err)
+		}
+	})
+}
+
 func newDuckhouseHandler(w io.Writer) http.Handler {
-	var h http.Handler = http.HandlerFunc(duckhouseHandler)
+	mux := http.NewServeMux()
+	mux.Handle("/{$}", errorAwareHandler(handleQuery))
+	mux.Handle("/ping/{$}", errorAwareHandler(handlePing))
+	mux.Handle("/status/{$}", errorAwareHandler(handleStatus))
+	var h http.Handler = mux
 	h = combinedlog.WrapHandler(w, h)
 	h = authn.WrapHandler(h)
 	return h

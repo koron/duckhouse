@@ -23,12 +23,12 @@ func assertEqual[T any](t *testing.T, want, got T) {
 
 func startServer0(t *testing.T) *httptest.Server {
 	var (
-		dbHomeDir        string = t.TempDir()
-		maxDB            int    = 4
-		dbThreads        int    = 1
-		dbMemoryLimiit   string = "1GiB"
-		dbMaxTempDirSize string = "4GiB"
-		dbLockConfig     bool   = true
+		dbHomeDir        = t.TempDir()
+		maxDB            = 4
+		dbThreads        = 1
+		dbMemoryLimiit   = "1GiB"
+		dbMaxTempDirSize = "4GiB"
+		dbLockConfig     = true
 	)
 
 	duckdbinit.DefaultSettings = duckdbinit.Settings{
