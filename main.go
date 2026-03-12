@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -207,15 +208,7 @@ func duckhouseHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func newDuckDB(ctx context.Context) (*sql.DB, error) {
-	db, err := sql.Open("duckdb", "")
-	if err != nil {
-		return nil, err
-	}
-	if err := duckdbinit.Init(ctx, db); err != nil {
-		db.Close()
-		return nil, err
-	}
-	return db, nil
+	return duckdbinit.Open(ctx)
 }
 
 func checkDB(ctx context.Context) error {
@@ -257,6 +250,14 @@ func stringOrReadFile(s, purpose string) (string, error) {
 	return string(b), nil
 }
 
+func getwd() string {
+	wd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return wd
+}
+
 func main() {
 	var (
 		debugFlag bool
@@ -264,9 +265,12 @@ func main() {
 		maxDB int
 		addr  string
 
-		dbThreads      int
-		dbMemoryLimiit string
-		dbInitQuery    string
+		dbThreads        int
+		dbMemoryLimiit   string
+		dbHomeDir        string
+		dbMaxTempDirSize string
+		dbInitQuery      string
+		dbLockConfig     bool
 	)
 
 	flag.BoolVar(&debugFlag, "debug", false, `enable debug log`)
@@ -274,6 +278,9 @@ func main() {
 	flag.StringVar(&addr, "addr", "localhost:9998", `address hosts HTTP server`)
 	flag.IntVar(&dbThreads, "db.threads", 1, `initial value of DB "threads"`)
 	flag.StringVar(&dbMemoryLimiit, "db.memorylimit", "1GiB", `initial value of DB "memory_limit"`)
+	flag.StringVar(&dbHomeDir, "db.homedir", filepath.Join(getwd(), ".duckdb"), `home dir for duckdb`)
+	flag.StringVar(&dbMaxTempDirSize, "db.maxtempdirsize", "10GiB", `max size of temporary dir`)
+	flag.BoolVar(&dbLockConfig, "db.lockconfig", true, `lock DB settings. to unlock use -db.lockconfig=false`)
 	flag.StringVar(&dbInitQuery, "db.initquery", "", `DB initialization query or file (prefixed with '@')`)
 	flag.Parse()
 
@@ -284,11 +291,15 @@ func main() {
 	conndb.SetMaxDB(maxDB)
 	conndb.SetOpener(conndb.OpenerFunc(newDuckDB))
 
-	if dbThreads > 0 {
-		duckdbinit.DefaultSettings.Threads = &dbThreads
-	}
-	if dbMemoryLimiit != "" {
-		duckdbinit.DefaultSettings.MemoryLimit = &dbMemoryLimiit
+	duckdbinit.DefaultSettings = duckdbinit.Settings{
+		HomeDir:        dbHomeDir,
+		Threads:        dbThreads,
+		MemoryLimit:    dbMemoryLimiit,
+		ExtensionDir:   filepath.Join(dbHomeDir, "extensions"),
+		SecretDir:      filepath.Join(dbHomeDir, "stored_secrets"),
+		TempDir:        filepath.Join(dbHomeDir, "tmp"),
+		MaxTempDirSize: dbMaxTempDirSize,
+		LockConfig:     dbLockConfig,
 	}
 	if dbInitQuery != "" {
 		q, err := stringOrReadFile(dbInitQuery, "db.initquery")
