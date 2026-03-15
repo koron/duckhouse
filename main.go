@@ -182,9 +182,9 @@ func handleQuery(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-type Status struct {
-	ID    string      `json:"ID"`
-	Stats sql.DBStats `json:"Stats"`
+type ConnectionStatus struct {
+	ID      string      `json:"ID"`
+	DBStats sql.DBStats `json:"DBStats"`
 }
 
 func handlePing(w http.ResponseWriter, r *http.Request) error {
@@ -193,14 +193,15 @@ func handlePing(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func handleStatus(w http.ResponseWriter, r *http.Request) error {
+func handleStatusConnections(w http.ResponseWriter, r *http.Request) error {
 	w.Header().Set("Content-Type", "application/jsonlines")
 	w.WriteHeader(200)
 	enc := json.NewEncoder(w)
-	var s Status
 	for id, db := range conndb.Default.Databases() {
-		s.ID = id.String()
-		s.Stats = db.Stats()
+		s := ConnectionStatus{
+			ID:      id.String(),
+			DBStats: db.Stats(),
+		}
 		if err := enc.Encode(s); err != nil {
 			return err
 		}
@@ -237,7 +238,7 @@ func newDuckhouseHandler(w io.Writer) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/{$}", errorAwareHandler(handleQuery))
 	mux.Handle("/ping/{$}", errorAwareHandler(handlePing))
-	mux.Handle("/status/{$}", errorAwareHandler(handleStatus))
+	mux.Handle("/status/connections/{$}", errorAwareHandler(handleStatusConnections))
 	var h http.Handler = mux
 	h = combinedlog.WrapHandler(w, h)
 	h = authn.WrapHandler(h)
