@@ -67,13 +67,25 @@ func doPost(ts *httptest.Server, path, body string) (*http.Response, error) {
 	return ts.Client().Post(ts.URL+path, "", strings.NewReader(body))
 }
 
+func doDelete(ts *httptest.Server, path string) (*http.Response, error) {
+	req, err := http.NewRequest("DELETE", ts.URL+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	return ts.Client().Do(req)
+}
+
 func readResponse(r *http.Response, err error) (string, error) {
+	return readResponse2(r, err, 200, 299)
+}
+
+func readResponse2(r *http.Response, err error, codeBegin, codeEnd int) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("http failed: %w", err)
 	}
 	defer r.Body.Close()
-	if r.StatusCode < 200 || r.StatusCode > 299 {
-		return "", fmt.Errorf("request failed: %d (%s)", r.StatusCode, r.Status)
+	if r.StatusCode < codeBegin || r.StatusCode > codeEnd {
+		return "", fmt.Errorf("request failed: %d (%s) - should be between %d and %d", r.StatusCode, r.Status, codeBegin, codeEnd)
 	}
 	b, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -163,5 +175,47 @@ func TestStatusConnections(t *testing.T) {
 	assertEqual(t, []TestConnStatus{
 		{DBStats: sql.DBStats{MaxIdleClosed: 2}},
 	}, got, cmpopts.IgnoreFields(TestConnStatus{}, "ID"))
+	wg.Wait()
+}
+
+// TestQueryStats contains query statistics.
+type TestQueryStats struct {
+	ID       string `json:"ID"`
+	ConnID   string `json:"ConnID"`
+	Query    string `json:"Query"`
+	Start    string `json:"Start"`
+	Duration string `json:"Duration"`
+}
+
+func TestCancelQuery(t *testing.T) {
+	ts := startServer0(t)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		// A slow query, to be interrupted
+		r, err := doPost(ts, "/", `SELECT count(md5(i::VARCHAR)) as count_md5 FROM range(0, 100000000, 1) t1(i)`)
+		const want = "context canceled\nINTERRUPT Error: Interrupted!\n"
+		got, err := readResponse2(r, err, 504, 504)
+		if err != nil {
+			t.Errorf("slow query failed: %s", err)
+		}
+		assertEqual(t, want, got)
+	}()
+	time.Sleep(100 * time.Millisecond)
+	// List executing queries
+	queries, err := readJSONL[TestQueryStats](doGet(ts, "/status/queries/"))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	// Interrupt (DELETE) a query
+	if len(queries) != 1 {
+		t.Errorf("unexpected number of queries: %d", len(queries))
+		return
+	}
+	r, err := doDelete(ts, "/status/queries/"+queries[0].ID)
+	got, err := readResponse2(r, err, 204, 204)
+	assertEqual(t, "", got)
 	wg.Wait()
 }

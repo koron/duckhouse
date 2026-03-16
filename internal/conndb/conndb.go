@@ -39,7 +39,7 @@ func (fn OpenerFunc) Open(ctx context.Context) (*sql.DB, error) {
 type ID uint32
 
 func (id ID) String() string {
-	return fmt.Sprintf("%08x", uint32(id))
+	return fmt.Sprintf("C_%08x", uint32(id))
 }
 
 func (m *Manager) newID(c net.Conn) ID {

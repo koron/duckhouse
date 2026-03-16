@@ -21,12 +21,14 @@ import (
 	"github.com/koron/duckhouse/internal/duckdbinit"
 	"github.com/koron/duckhouse/internal/formatter"
 	"github.com/koron/duckhouse/internal/httperror"
+	"github.com/koron/duckhouse/internal/querydb"
 )
 
 var (
 	accessLogWriter io.Writer = os.Stdout
 
 	defaultFormat = "csv"
+	queryDatabase querydb.Database
 )
 
 func readQuery(r *http.Request) (string, error) {
@@ -135,13 +137,10 @@ func handleQuery(w http.ResponseWriter, r *http.Request) error {
 		return httperror.Newf(400, "Invalid parameters for the format: %s params=%+v", format, params)
 	}
 
-	ctx, cancel := context.WithCancel(r.Context())
-	defer cancel()
-
 	// Determine database
-	db, id, err := conndb.GetDB(ctx)
-	if id != 0 {
-		w.Header().Set("Duckhouse-Connectionid", id.String())
+	db, connid, err := conndb.GetDB(r.Context())
+	if connid != 0 {
+		w.Header().Set("Duckhouse-Connectionid", connid.String())
 	}
 	if err != nil {
 		if errors.Is(err, conndb.ErrMaxDB) {
@@ -150,23 +149,23 @@ func handleQuery(w http.ResponseWriter, r *http.Request) error {
 		return httperror.Newf(500, "No associated DB: %s", err)
 	}
 
-	// TODO: register an executing query.
-	// TODO: defer unregister an executing query.
+	// Register an executing query, and defer unregister it.
+	q := queryDatabase.Add(r.Context(), connid, query)
+	defer q.Close()
 
 	// Execute a query
-	start := time.Now()
-	rows, err := db.QueryContext(ctx, query)
-	dur := time.Since(start)
+	rows, err := db.QueryContext(q.Context(), query)
+	dur := time.Since(q.Start)
 	if r, ok := w.(combinedlog.QueryReporter); ok {
 		r.QueryReport(query, dur)
 	}
 	w.Header().Set("Duckhouse-Duration", dur.String())
 	if err != nil {
-		if _, ok := err.(*duckdb.Error); !ok {
-			return httperror.Newf(500, "DB error: %s", err)
-		}
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return httperror.Newf(504, err.Error())
+		}
+		if _, ok := err.(*duckdb.Error); !ok {
+			return httperror.Newf(500, "DB error: %s", err)
 		}
 		return httperror.Newf(400, "Query error: %s", err)
 	}
@@ -175,7 +174,7 @@ func handleQuery(w http.ResponseWriter, r *http.Request) error {
 	// Write the response body
 	w.Header().Set("Content-Type", factory.ContentType())
 	w.WriteHeader(200)
-	err = writeRows(ctx, fw, rows)
+	err = writeRows(q.Context(), fw, rows)
 	if err != nil {
 		return httperror.Newf(500, "Serialization error: %s", err)
 	}
@@ -212,6 +211,36 @@ func handleStatusConnections(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+func handleStatusQueries(w http.ResponseWriter, r *http.Request) error {
+	w.Header().Set("Content-Type", "application/jsonlines")
+	w.WriteHeader(200)
+	now := time.Now()
+	enc := json.NewEncoder(w)
+	for _, q := range queryDatabase.Queries() {
+		if err := enc.Encode(q.Stats(now)); err != nil {
+			return err
+		}
+		if _, err := w.Write([]byte("\n")); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func handleInterruptQuery(w http.ResponseWriter, r *http.Request) error {
+	id, err  := querydb.ParseID(r.PathValue("queryID"))
+	if err != nil {
+		return httperror.Newf(400, "ID syntax error: %s", err)
+	}
+	q, ok := queryDatabase.Query(id)
+	if !ok {
+		return httperror.New(404)
+	}
+	q.Close()
+	w.WriteHeader(204)
+	return nil
+}
+
 func newDuckDB(ctx context.Context) (*sql.DB, error) {
 	return duckdbinit.Open(ctx)
 }
@@ -239,6 +268,8 @@ func newDuckhouseHandler(w io.Writer) http.Handler {
 	mux.Handle("/{$}", errorAwareHandler(handleQuery))
 	mux.Handle("/ping/{$}", errorAwareHandler(handlePing))
 	mux.Handle("/status/connections/{$}", errorAwareHandler(handleStatusConnections))
+	mux.Handle("/status/queries/{$}", errorAwareHandler(handleStatusQueries))
+	mux.Handle("DELETE /status/queries/{queryID}", errorAwareHandler(handleInterruptQuery))
 	var h http.Handler = mux
 	h = combinedlog.WrapHandler(w, h)
 	h = authn.WrapHandler(h)
