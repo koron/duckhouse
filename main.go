@@ -161,11 +161,11 @@ func handleQuery(w http.ResponseWriter, r *http.Request) error {
 	}
 	w.Header().Set("Duckhouse-Duration", dur.String())
 	if err != nil {
-		if _, ok := err.(*duckdb.Error); !ok {
-			return httperror.Newf(500, "DB error: %s", err)
-		}
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return httperror.Newf(504, err.Error())
+		}
+		if _, ok := err.(*duckdb.Error); !ok {
+			return httperror.Newf(500, "DB error: %s", err)
 		}
 		return httperror.Newf(400, "Query error: %s", err)
 	}
@@ -227,6 +227,19 @@ func handleStatusQueries(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+func handleInterruptQuery(w http.ResponseWriter, r *http.Request) error {
+	id, err  := querydb.ParseID(r.PathValue("queryID"))
+	if err != nil {
+		return httperror.Newf(400, "ID syntax error: %s", err)
+	}
+	q, ok := queryDatabase.Query(id)
+	if !ok {
+		return httperror.New(404)
+	}
+	q.Close()
+	return nil
+}
+
 func newDuckDB(ctx context.Context) (*sql.DB, error) {
 	return duckdbinit.Open(ctx)
 }
@@ -255,6 +268,7 @@ func newDuckhouseHandler(w io.Writer) http.Handler {
 	mux.Handle("/ping/{$}", errorAwareHandler(handlePing))
 	mux.Handle("/status/connections/{$}", errorAwareHandler(handleStatusConnections))
 	mux.Handle("/status/queries/{$}", errorAwareHandler(handleStatusQueries))
+	mux.Handle("DELETE /status/queries/{queryID}", errorAwareHandler(handleInterruptQuery))
 	var h http.Handler = mux
 	h = combinedlog.WrapHandler(w, h)
 	h = authn.WrapHandler(h)

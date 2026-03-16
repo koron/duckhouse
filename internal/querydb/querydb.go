@@ -3,8 +3,11 @@ package querydb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand/v2"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,6 +23,17 @@ type ID uint32
 
 func (id ID) String() string {
 	return fmt.Sprintf("Q_%08x", uint32(id))
+}
+
+func ParseID(s string) (ID, error) {
+	if !strings.HasPrefix(s, "Q_") {
+		return 0, errors.New("query ID should starts with \"Q_\"")
+	}
+	n, err := strconv.ParseUint(s[2:], 16, 32)
+	if err != nil {
+		return 0, err
+	}
+	return ID(n), nil
 }
 
 type Query struct {
@@ -89,6 +103,13 @@ func (db *Database) Queries() []*Query {
 		queries = append(queries, q)
 	}
 	return queries
+}
+
+func (db *Database) Query(id ID) (*Query, bool) {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+	q, ok := db.queries[id]
+	return q, ok
 }
 
 func (q *Query) Context() context.Context {
