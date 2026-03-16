@@ -237,6 +237,7 @@ func handleInterruptQuery(w http.ResponseWriter, r *http.Request) error {
 		return httperror.New(404)
 	}
 	q.Close()
+	w.WriteHeader(204)
 	return nil
 }
 
