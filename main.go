@@ -228,7 +228,7 @@ func handleStatusQueries(w http.ResponseWriter, r *http.Request) error {
 }
 
 func handleInterruptQuery(w http.ResponseWriter, r *http.Request) error {
-	id, err  := querydb.ParseID(r.PathValue("queryID"))
+	id, err := querydb.ParseID(r.PathValue("queryID"))
 	if err != nil {
 		return httperror.Newf(400, "ID syntax error: %s", err)
 	}
@@ -318,6 +318,8 @@ func main() {
 		maxDB int
 		addr  string
 
+		authnFile string
+
 		dbThreads        int
 		dbMemoryLimiit   string
 		dbHomeDir        string
@@ -329,6 +331,7 @@ func main() {
 	flag.BoolVar(&debugFlag, "debug", false, `enable debug log`)
 	flag.IntVar(&maxDB, "maxdb", 4, `maximum number of DB instances`)
 	flag.StringVar(&addr, "addr", "localhost:9998", `address hosts HTTP server`)
+	flag.StringVar(&authnFile, "authnfile", "", `authentication information file`)
 	flag.IntVar(&dbThreads, "db.threads", 1, `initial value of DB "threads"`)
 	flag.StringVar(&dbMemoryLimiit, "db.memorylimit", "1GiB", `initial value of DB "memory_limit"`)
 	flag.StringVar(&dbHomeDir, "db.homedir", filepath.Join(getwd(), ".duckdb"), `home dir for duckdb`)
@@ -343,6 +346,14 @@ func main() {
 
 	conndb.SetMaxDB(maxDB)
 	conndb.SetOpener(conndb.OpenerFunc(newDuckDB))
+
+	if authnFile != "" {
+		err := authn.ReadFile(authnFile)
+		if err != nil {
+			slog.Error("authnfile failure", "error", err)
+			os.Exit(1)
+		}
+	}
 
 	duckdbinit.DefaultSettings = duckdbinit.Settings{
 		HomeDir:        dbHomeDir,
