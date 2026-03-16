@@ -212,6 +212,15 @@ func handleStatusConnections(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+func handleStatusQueries(w http.ResponseWriter, r *http.Request) error {
+	w.Header().Set("Content-Type", "application/jsonlines")
+	w.WriteHeader(200)
+	enc := json.NewEncoder(w)
+	// TODO:
+	_ = enc
+	return nil
+}
+
 func newDuckDB(ctx context.Context) (*sql.DB, error) {
 	return duckdbinit.Open(ctx)
 }
@@ -239,6 +248,7 @@ func newDuckhouseHandler(w io.Writer) http.Handler {
 	mux.Handle("/{$}", errorAwareHandler(handleQuery))
 	mux.Handle("/ping/{$}", errorAwareHandler(handlePing))
 	mux.Handle("/status/connections/{$}", errorAwareHandler(handleStatusConnections))
+	mux.Handle("/status/queries/{$}", errorAwareHandler(handleStatusQueries))
 	var h http.Handler = mux
 	h = combinedlog.WrapHandler(w, h)
 	h = authn.WrapHandler(h)
