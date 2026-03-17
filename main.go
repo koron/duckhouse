@@ -29,6 +29,8 @@ var (
 
 	defaultFormat = "csv"
 	queryDatabase querydb.Database
+
+	withoutAuthz = false
 )
 
 func readQuery(r *http.Request) (string, error) {
@@ -116,7 +118,23 @@ func writeRows(ctx context.Context, fw formatter.Writer, rows *sql.Rows) error {
 	return fw.Flush()
 }
 
+func checkAuthz(r *http.Request) error {
+	if !authn.Enable() {
+		return nil
+	}
+	if _, ok := authn.AuthnID(r); ok {
+		return nil
+	}
+	if withoutAuthz {
+		return nil
+	}
+	return httperror.New(401)
+}
+
 func handleQuery(w http.ResponseWriter, r *http.Request) error {
+	if err := checkAuthz(r); err != nil {
+		return err
+	}
 	if r.Method != "GET" && r.Method != "POST" {
 		return httperror.New(404)
 	}
@@ -228,7 +246,10 @@ func handleStatusQueries(w http.ResponseWriter, r *http.Request) error {
 }
 
 func handleInterruptQuery(w http.ResponseWriter, r *http.Request) error {
-	id, err  := querydb.ParseID(r.PathValue("queryID"))
+	if err := checkAuthz(r); err != nil {
+		return err
+	}
+	id, err := querydb.ParseID(r.PathValue("queryID"))
 	if err != nil {
 		return httperror.Newf(400, "ID syntax error: %s", err)
 	}
@@ -266,9 +287,9 @@ func errorAwareHandler(handle func(http.ResponseWriter, *http.Request) error) ht
 func newDuckhouseHandler(w io.Writer) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/{$}", errorAwareHandler(handleQuery))
-	mux.Handle("/ping/{$}", errorAwareHandler(handlePing))
-	mux.Handle("/status/connections/{$}", errorAwareHandler(handleStatusConnections))
-	mux.Handle("/status/queries/{$}", errorAwareHandler(handleStatusQueries))
+	mux.Handle("GET /ping/{$}", errorAwareHandler(handlePing))
+	mux.Handle("GET /status/connections/{$}", errorAwareHandler(handleStatusConnections))
+	mux.Handle("GET /status/queries/{$}", errorAwareHandler(handleStatusQueries))
 	mux.Handle("DELETE /status/queries/{queryID}", errorAwareHandler(handleInterruptQuery))
 	var h http.Handler = mux
 	h = combinedlog.WrapHandler(w, h)
@@ -318,6 +339,9 @@ func main() {
 		maxDB int
 		addr  string
 
+		authnFile string
+		noauthz bool
+
 		dbThreads        int
 		dbMemoryLimiit   string
 		dbHomeDir        string
@@ -329,6 +353,8 @@ func main() {
 	flag.BoolVar(&debugFlag, "debug", false, `enable debug log`)
 	flag.IntVar(&maxDB, "maxdb", 4, `maximum number of DB instances`)
 	flag.StringVar(&addr, "addr", "localhost:9998", `address hosts HTTP server`)
+	flag.StringVar(&authnFile, "authnfile", "", `authentication information file`)
+	flag.BoolVar(&noauthz, "noauthz", false, `executing queries etc. w/o authz`)
 	flag.IntVar(&dbThreads, "db.threads", 1, `initial value of DB "threads"`)
 	flag.StringVar(&dbMemoryLimiit, "db.memorylimit", "1GiB", `initial value of DB "memory_limit"`)
 	flag.StringVar(&dbHomeDir, "db.homedir", filepath.Join(getwd(), ".duckdb"), `home dir for duckdb`)
@@ -343,6 +369,21 @@ func main() {
 
 	conndb.SetMaxDB(maxDB)
 	conndb.SetOpener(conndb.OpenerFunc(newDuckDB))
+
+	if authnFile != "" {
+		err := authn.ReadFile(authnFile)
+		if err != nil {
+			slog.Error("authnfile failure", "error", err)
+			os.Exit(1)
+		}
+	}
+	if noauthz {
+		if !authn.Enable() {
+			slog.Error("-noauthz needs to be used with -authnfile.")
+			os.Exit(1)
+		}
+		withoutAuthz = true
+	}
 
 	duckdbinit.DefaultSettings = duckdbinit.Settings{
 		HomeDir:        dbHomeDir,

@@ -53,8 +53,8 @@ func (w *wrapWriter) QueryReport(query string, duration time.Duration) {
 func writeLog(w io.Writer, ww *wrapWriter, r *http.Request) {
 	// Basic information: remote, authn, timestamp
 	remoteAddr := r.RemoteAddr
-	authnID := authn.AuthnID(r)
-	if authnID == authn.NoAuthn {
+	authnID, ok := authn.AuthnID(r)
+	if !ok {
 		authnID = "-"
 	}
 	timestamp := time.Now().Format("02/Jan/2006:15:04:05 -0700")
