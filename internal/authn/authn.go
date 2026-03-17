@@ -15,7 +15,11 @@ import (
 
 type ID string
 
-var NoAuthn ID = ""
+const NoAuthn ID = ""
+
+func Enable() bool {
+	return Default != nil
+}
 
 func extractID(r *http.Request) ID {
 	if Default == nil {
@@ -43,12 +47,12 @@ func WrapHandler(h http.Handler) http.Handler {
 	})
 }
 
-func AuthnID(r *http.Request) ID {
+func AuthnID(r *http.Request) (ID, bool) {
 	id, ok := r.Context().Value(idKey{}).(ID)
 	if !ok {
-		id = NoAuthn
+		return NoAuthn, false
 	}
-	return id
+	return id, true
 }
 
 type Type string
