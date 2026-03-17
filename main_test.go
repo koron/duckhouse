@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/koron/duckhouse/internal/authn"
 	"github.com/koron/duckhouse/internal/conndb"
 	"github.com/koron/duckhouse/internal/duckdbinit"
 )
@@ -59,20 +61,67 @@ func startServer0(t *testing.T) *httptest.Server {
 	return ts
 }
 
-func doGet(ts *httptest.Server, path string) (*http.Response, error) {
-	return ts.Client().Get(ts.URL + path)
+func setupAuthn(t *testing.T, name string, noauthz bool) {
+	t.Helper()
+	err := authn.ReadFile(name)
+	if err != nil {
+		t.Fatalf("failed to read authn json file: %s", err)
+	}
+	withoutAuthz = noauthz
+	t.Cleanup(func() {
+		authn.Default = nil
+		withoutAuthz = false
+	})
 }
 
-func doPost(ts *httptest.Server, path, body string) (*http.Response, error) {
-	return ts.Client().Post(ts.URL+path, "", strings.NewReader(body))
+type RequestOption func(*http.Request) *http.Request
+
+func authorizationHeader(value string) RequestOption {
+	return func(req *http.Request) *http.Request {
+		req.Header.Set("Authorization", value)
+		return req
+	}
 }
 
-func doDelete(ts *httptest.Server, path string) (*http.Response, error) {
+func authorizationBasic(name, password string) RequestOption {
+	s := base64.StdEncoding.EncodeToString([]byte(name + ":" + password))
+	return authorizationHeader("Basic " + s)
+}
+
+func authorizationBearer(token string) RequestOption {
+	return authorizationHeader("Bearer " + token)
+}
+
+func doReq(ts *httptest.Server, req *http.Request, options ...RequestOption) (*http.Response, error) {
+	// apply options
+	for _, o := range options {
+		req = o(req)
+	}
+	return ts.Client().Do(req)
+}
+
+func doGet(ts *httptest.Server, path string, options ...RequestOption) (*http.Response, error) {
+	req, err := http.NewRequest("GET", ts.URL+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	return doReq(ts, req, options...)
+}
+
+func doPost(ts *httptest.Server, path, body string, options ...RequestOption) (*http.Response, error) {
+	req, err := http.NewRequest("POST", ts.URL+path, strings.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	return doReq(ts, req, options...)
+}
+
+func doDelete(ts *httptest.Server, path string, options ...RequestOption) (*http.Response, error) {
 	req, err := http.NewRequest("DELETE", ts.URL+path, nil)
 	if err != nil {
 		return nil, err
 	}
-	return ts.Client().Do(req)
+	return doReq(ts, req, options...)
 }
 
 func readResponse(r *http.Response, err error) (string, error) {
@@ -124,8 +173,13 @@ func readJSONL[T any](r *http.Response, err error) ([]T, error) {
 
 // testQuery0 checks CSV the response for the query.
 func testQuery0(t *testing.T, ts *httptest.Server, query, want string) {
+	testQuery1(t, ts, query, want)
+}
+
+// testQuery1 checks CSV the response for the query, with RequestOptions.
+func testQuery1(t *testing.T, ts *httptest.Server, query, want string, options ...RequestOption) {
 	t.Helper()
-	got, err := readResponse(doPost(ts, "/?f=csv", query))
+	got, err := readResponse(doPost(ts, "/?f=csv", query, options...))
 	if err != nil {
 		t.Error(err)
 		return
@@ -216,6 +270,82 @@ func TestCancelQuery(t *testing.T) {
 	}
 	r, err := doDelete(ts, "/status/queries/"+queries[0].ID)
 	got, err := readResponse2(r, err, 204, 204)
+	if err != nil {
+		t.Error(err)
+	}
 	assertEqual(t, "", got)
 	wg.Wait()
+}
+
+func testAuthorizedQuery(t *testing.T, ts *httptest.Server, query, want string, wantAuthID *string, options ...RequestOption) {
+	t.Helper()
+	resp, err := doPost(ts, "/?f=csv", query, options...)
+	got, err := readResponse(resp, err)
+	if err != nil {
+		t.Errorf("request failed: %s", err)
+		return
+	}
+	assertEqual(t, want, got)
+	if wantAuthID == nil {
+		if s, ok := resp.Header[AuthnIDHeader]; ok {
+			t.Errorf("unexpected authn ID provided: %s", s)
+		}
+		return
+	}
+	gotAuthID, ok := resp.Header[AuthnIDHeader]
+	if !ok || len(gotAuthID) == 0 {
+		t.Error("unavailable authnID")
+		return
+	}
+	assertEqual(t, *wantAuthID, gotAuthID[0])
+}
+
+func testUnauthorizedQuery(t *testing.T, ts *httptest.Server, query string, options ...RequestOption) {
+	t.Helper()
+	resp, err := doPost(ts, "/?f=csv", query, options...)
+	got, err := readResponse2(resp, err, 401, 401)
+	if err != nil {
+		t.Errorf("request failed: %s", err)
+		return
+	}
+	assertEqual(t, "Unauthorized\n", got)
+	if s, ok := resp.Header[AuthnIDHeader]; ok {
+		t.Errorf("unexpected authn ID provided: %s", s)
+	}
+}
+
+func TestAuthnQuery(t *testing.T) {
+	t.Run("authorized", func(t *testing.T) {
+		ts := startServer0(t)
+		setupAuthn(t, "testdata/authn.json", false)
+		testAuthorizedQuery(t, ts, `SELECT version() AS V`, "V\nv1.5.0\n", new("token1"), authorizationBearer("token-0123456789abcdef"))
+		testAuthorizedQuery(t, ts, `SELECT version() AS V`, "V\nv1.5.0\n", new("token2"), authorizationBearer("foobarbaz"))
+		testAuthorizedQuery(t, ts, `SELECT version() AS V`, "V\nv1.5.0\n", new("user1"), authorizationBasic("user1", "abcd1234"))
+		testAuthorizedQuery(t, ts, `SELECT version() AS V`, "V\nv1.5.0\n", new("user2"), authorizationBasic("user2", "xyz789"))
+	})
+	t.Run("not authorized", func(t *testing.T) {
+		ts := startServer0(t)
+		setupAuthn(t, "testdata/authn.json", false)
+		testAuthorizedQuery(t, ts, `SELECT version() AS V`, "V\nv1.5.0\n", new("token1"), authorizationBearer("token-0123456789abcdef"))
+		// Should be failed without Authorization header
+		testUnauthorizedQuery(t, ts, `SELECT version() AS V`)
+		// Should be failed for with wrong Authorization header
+		testUnauthorizedQuery(t, ts, `SELECT version() AS V`, authorizationBearer("unknown-token"))
+	})
+	t.Run("without authorization", func(t *testing.T) {
+		ts := startServer0(t)
+		setupAuthn(t, "testdata/authn.json", true)
+		testAuthorizedQuery(t, ts, `SELECT version() AS V`, "V\nv1.5.0\n", new("token1"), authorizationBearer("token-0123456789abcdef"))
+		testAuthorizedQuery(t, ts, `SELECT version() AS V`, "V\nv1.5.0\n", nil)
+	})
+}
+
+func TestAuthnInterruptQuery(t *testing.T) {
+	t.Run("authorized", func(t *testing.T) {
+		ts := startServer0(t)
+		setupAuthn(t, "testdata/authn.json", false)
+		// TODO:
+		_ = ts
+	})
+	// TODO:
 }

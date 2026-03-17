@@ -24,6 +24,12 @@ import (
 	"github.com/koron/duckhouse/internal/querydb"
 )
 
+const (
+	AuthnIDHeader      = "Duckhouse-Authnid"
+	ConnectionIDHeader = "Duckhouse-Connectionid"
+	DurationHeader     = "Duckhouse-Duration"
+)
+
 var (
 	accessLogWriter io.Writer = os.Stdout
 
@@ -118,11 +124,13 @@ func writeRows(ctx context.Context, fw formatter.Writer, rows *sql.Rows) error {
 	return fw.Flush()
 }
 
-func checkAuthz(r *http.Request) error {
+func checkAuthz(w http.ResponseWriter, r *http.Request) error {
 	if !authn.Enable() {
 		return nil
 	}
-	if _, ok := authn.AuthnID(r); ok {
+	if id, ok := authn.AuthnID(r); ok {
+		// Insert AuthnID to response header.
+		w.Header().Set(AuthnIDHeader, id.String())
 		return nil
 	}
 	if withoutAuthz {
@@ -132,7 +140,7 @@ func checkAuthz(r *http.Request) error {
 }
 
 func handleQuery(w http.ResponseWriter, r *http.Request) error {
-	if err := checkAuthz(r); err != nil {
+	if err := checkAuthz(w, r); err != nil {
 		return err
 	}
 	if r.Method != "GET" && r.Method != "POST" {
@@ -158,7 +166,7 @@ func handleQuery(w http.ResponseWriter, r *http.Request) error {
 	// Determine database
 	db, connid, err := conndb.GetDB(r.Context())
 	if connid != 0 {
-		w.Header().Set("Duckhouse-Connectionid", connid.String())
+		w.Header().Set(ConnectionIDHeader, connid.String())
 	}
 	if err != nil {
 		if errors.Is(err, conndb.ErrMaxDB) {
@@ -177,7 +185,7 @@ func handleQuery(w http.ResponseWriter, r *http.Request) error {
 	if r, ok := w.(combinedlog.QueryReporter); ok {
 		r.QueryReport(query, dur)
 	}
-	w.Header().Set("Duckhouse-Duration", dur.String())
+	w.Header().Set(DurationHeader, dur.String())
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return httperror.Newf(504, err.Error())
@@ -246,7 +254,7 @@ func handleStatusQueries(w http.ResponseWriter, r *http.Request) error {
 }
 
 func handleInterruptQuery(w http.ResponseWriter, r *http.Request) error {
-	if err := checkAuthz(r); err != nil {
+	if err := checkAuthz(w, r); err != nil {
 		return err
 	}
 	id, err := querydb.ParseID(r.PathValue("queryID"))
@@ -340,7 +348,7 @@ func main() {
 		addr  string
 
 		authnFile string
-		noauthz bool
+		noauthz   bool
 
 		dbThreads        int
 		dbMemoryLimiit   string

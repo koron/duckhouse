@@ -15,6 +15,10 @@ import (
 
 type ID string
 
+func (id ID) String() string {
+	return string(id)
+}
+
 const NoAuthn ID = ""
 
 func Enable() bool {
