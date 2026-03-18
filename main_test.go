@@ -190,6 +190,13 @@ func testQuery1(t *testing.T, ts *httptest.Server, query, want string, options .
 //////////////////////////////////////////////////////////////////////////////
 // Test cases
 
+func TestCheckDB(t *testing.T) {
+	err := checkDB(t.Context())
+	if err != nil {
+		t.Error(err)
+	}
+}
+
 func TestPing(t *testing.T) {
 	ts := startServer0(t)
 	got, err := readResponse(doGet(ts, "/ping/"))
@@ -243,38 +250,48 @@ type TestQueryStats struct {
 
 func TestCancelQuery(t *testing.T) {
 	ts := startServer0(t)
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		// A slow query, to be interrupted
-		r, err := doPost(ts, "/", `SELECT count(md5(i::VARCHAR)) as count_md5 FROM range(0, 100000000, 1) t1(i)`)
-		const want = "context canceled\nINTERRUPT Error: Interrupted!\n"
-		got, err := readResponse2(r, err, 504, 504)
+	t.Run("canceled", func(t *testing.T) {
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// A slow query, to be interrupted
+			r, err := doPost(ts, "/", `SELECT count(md5(i::VARCHAR)) as count_md5 FROM range(0, 100000000, 1) t1(i)`)
+			const want = "context canceled\nINTERRUPT Error: Interrupted!\n"
+			got, err := readResponse2(r, err, 504, 504)
+			if err != nil {
+				t.Errorf("slow query failed: %s", err)
+			}
+			assertEqual(t, want, got)
+		}()
+		time.Sleep(100 * time.Millisecond)
+		// List executing queries
+		queries, err := readJSONL[TestQueryStats](doGet(ts, "/status/queries/"))
 		if err != nil {
-			t.Errorf("slow query failed: %s", err)
+			t.Error(err)
+			return
 		}
-		assertEqual(t, want, got)
-	}()
-	time.Sleep(100 * time.Millisecond)
-	// List executing queries
-	queries, err := readJSONL[TestQueryStats](doGet(ts, "/status/queries/"))
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	// Interrupt (DELETE) a query
-	if len(queries) != 1 {
-		t.Errorf("unexpected number of queries: %d", len(queries))
-		return
-	}
-	r, err := doDelete(ts, "/status/queries/"+queries[0].ID)
-	got, err := readResponse2(r, err, 204, 204)
-	if err != nil {
-		t.Error(err)
-	}
-	assertEqual(t, "", got)
-	wg.Wait()
+		// Interrupt (DELETE) a query
+		if len(queries) != 1 {
+			t.Errorf("unexpected number of queries: %d", len(queries))
+			return
+		}
+		r, err := doDelete(ts, "/status/queries/"+queries[0].ID)
+		got, err := readResponse2(r, err, 204, 204)
+		if err != nil {
+			t.Error(err)
+		}
+		assertEqual(t, "", got)
+		wg.Wait()
+	})
+	t.Run("not found", func(t *testing.T) {
+		r, err := doDelete(ts, "/status/queries/Q_deadbeaf")
+		got, err := readResponse2(r, err, 404, 404)
+		if err != nil {
+			t.Error(err)
+		}
+		assertEqual(t, "Not Found\n", got)
+	})
 }
 
 func testAuthorizedQuery(t *testing.T, ts *httptest.Server, query, want string, wantAuthID *string, options ...RequestOption) {
@@ -340,12 +357,69 @@ func TestAuthnQuery(t *testing.T) {
 	})
 }
 
+const (
+	idSyntaxError = "ID syntax error: query ID should starts with \"Q_\"\n"
+)
+
+func testAuthorizedInterruptQuery(t *testing.T, ts *httptest.Server, queryID string, want string, wantAuthID *string, options ...RequestOption) {
+	t.Helper()
+	resp, err := doDelete(ts, "/status/queries/"+queryID, options...)
+	got, err := readResponse2(resp, err, 400, 400)
+
+	if err != nil {
+		t.Errorf("request failed: %s", err)
+		return
+	}
+	assertEqual(t, want, got)
+
+	if wantAuthID == nil {
+		if s, ok := resp.Header[AuthnIDHeader]; ok {
+			t.Errorf("unexpected authn ID provided: %s", s)
+		}
+		return
+	}
+	gotAuthID, ok := resp.Header[AuthnIDHeader]
+	if !ok || len(gotAuthID) == 0 {
+		t.Error("unavailable authnID")
+		return
+	}
+	assertEqual(t, *wantAuthID, gotAuthID[0])
+}
+
+func testUnauthorizedInterruptQuery(t *testing.T, ts *httptest.Server, queryID string, options ...RequestOption) {
+	t.Helper()
+	resp, err := doDelete(ts, "/status/queries/"+queryID, options...)
+	got, err := readResponse2(resp, err, 401, 401)
+	if err != nil {
+		t.Errorf("request failed: %s", err)
+		return
+	}
+	assertEqual(t, "Unauthorized\n", got)
+	if s, ok := resp.Header[AuthnIDHeader]; ok {
+		t.Errorf("unexpected authn ID provided: %s", s)
+	}
+}
+
 func TestAuthnInterruptQuery(t *testing.T) {
 	t.Run("authorized", func(t *testing.T) {
 		ts := startServer0(t)
 		setupAuthn(t, "testdata/authn.json", false)
-		// TODO:
-		_ = ts
+		testAuthorizedInterruptQuery(t, ts, "dummy", idSyntaxError, new("token1"), authorizationBearer("token-0123456789abcdef"))
+		testAuthorizedInterruptQuery(t, ts, "dummy", idSyntaxError, new("token2"), authorizationBearer("foobarbaz"))
+		testAuthorizedInterruptQuery(t, ts, "dummy", idSyntaxError, new("user1"), authorizationBasic("user1", "abcd1234"))
+		testAuthorizedInterruptQuery(t, ts, "dummy", idSyntaxError, new("user2"), authorizationBasic("user2", "xyz789"))
 	})
-	// TODO:
+	t.Run("not authorized", func(t *testing.T) {
+		ts := startServer0(t)
+		setupAuthn(t, "testdata/authn.json", false)
+		testAuthorizedInterruptQuery(t, ts, "dummy", idSyntaxError, new("token1"), authorizationBearer("token-0123456789abcdef"))
+		testUnauthorizedInterruptQuery(t, ts, "dummy")
+		testUnauthorizedInterruptQuery(t, ts, "dummy", authorizationBearer("unknown-token"))
+	})
+	t.Run("without authorization", func(t *testing.T) {
+		ts := startServer0(t)
+		setupAuthn(t, "testdata/authn.json", true)
+		testAuthorizedInterruptQuery(t, ts, "dummy", idSyntaxError, new("token1"), authorizationBearer("token-0123456789abcdef"))
+		testAuthorizedInterruptQuery(t, ts, "dummy", idSyntaxError, nil)
+	})
 }
