@@ -8,6 +8,10 @@ import (
 
 type settingsKey struct{}
 
+func WithSettings(ctx context.Context, s Settings) context.Context {
+	return context.WithValue(ctx, settingsKey{}, &s)
+}
+
 func GetSettings(ctx context.Context) *Settings {
 	s, ok := ctx.Value(settingsKey{}).(*Settings)
 	if !ok {
