@@ -31,7 +31,7 @@ const (
 )
 
 var (
-	accessLogWriter io.Writer = os.Stdout
+	accessLogger *slog.Logger
 
 	defaultFormat = "csv"
 	queryDatabase querydb.Database
@@ -292,7 +292,7 @@ func errorAwareHandler(handle func(http.ResponseWriter, *http.Request) error) ht
 	})
 }
 
-func newDuckhouseHandler(w io.Writer) http.Handler {
+func newDuckhouseHandler(logger *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/{$}", errorAwareHandler(handleQuery))
 	mux.Handle("GET /ping/{$}", errorAwareHandler(handlePing))
@@ -300,7 +300,7 @@ func newDuckhouseHandler(w io.Writer) http.Handler {
 	mux.Handle("GET /status/queries/{$}", errorAwareHandler(handleStatusQueries))
 	mux.Handle("DELETE /status/queries/{queryID}", errorAwareHandler(handleInterruptQuery))
 	var h http.Handler = mux
-	h = combinedlog.WrapHandler(w, h)
+	h = combinedlog.WrapHandler(logger, h)
 	h = authn.WrapHandler(h)
 	return h
 }
@@ -312,7 +312,7 @@ func run(addr string) error {
 	}
 	srv := &http.Server{
 		Addr:        addr,
-		Handler:     newDuckhouseHandler(accessLogWriter),
+		Handler:     newDuckhouseHandler(accessLogger),
 		ConnContext: conndb.ConnContext,
 		ConnState:   conndb.ConnState,
 	}
@@ -347,6 +347,8 @@ func main() {
 		maxDB int
 		addr  string
 
+		accessLogFormat string
+
 		authnFile string
 		noauthz   bool
 
@@ -361,6 +363,7 @@ func main() {
 	flag.BoolVar(&debugFlag, "debug", false, `enable debug log`)
 	flag.IntVar(&maxDB, "maxdb", 4, `maximum number of DB instances`)
 	flag.StringVar(&addr, "addr", "localhost:9998", `address hosts HTTP server`)
+	flag.StringVar(&accessLogFormat, "accesslog.format", "json", `access log format: "text" or "json"`)
 	flag.StringVar(&authnFile, "authnfile", "", `authentication information file`)
 	flag.BoolVar(&noauthz, "noauthz", false, `executing queries etc. w/o authz`)
 	flag.IntVar(&dbThreads, "db.threads", 1, `initial value of DB "threads"`)
@@ -373,6 +376,16 @@ func main() {
 
 	if debugFlag {
 		slog.SetLogLoggerLevel(slog.LevelDebug)
+	}
+
+	switch accessLogFormat {
+	case "text":
+		accessLogger = slog.New(slog.NewTextHandler(os.Stderr, nil))
+	case "json":
+		accessLogger = slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	default:
+		slog.Error("unsupported access log format", "format", accessLogFormat)
+		os.Exit(1)
 	}
 
 	conndb.SetMaxDB(maxDB)

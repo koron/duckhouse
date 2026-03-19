@@ -2,8 +2,7 @@
 package combinedlog
 
 import (
-	"fmt"
-	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -50,17 +49,15 @@ func (w *wrapWriter) QueryReport(query string, duration time.Duration) {
 	}
 }
 
-func writeLog(w io.Writer, ww *wrapWriter, r *http.Request) {
-	// Basic information: remote, authn, timestamp
-	remoteAddr := r.RemoteAddr
+func writeLog(logger *slog.Logger, ww *wrapWriter, r *http.Request) {
+	// Basic information: remote, authn
 	authnID, ok := authn.AuthnID(r)
-	if !ok {
-		authnID = "-"
+	authnIDStr := "-"
+	if ok {
+		authnIDStr = authnID.String()
 	}
-	timestamp := time.Now().Format("02/Jan/2006:15:04:05 -0700")
 
-	// Request information: method, path, protocol version, referer, user-agent
-	requestLine := fmt.Sprintf("%s %s %s", r.Method, r.URL.RequestURI(), r.Proto)
+	// Request information: referer, user-agent
 	referer := r.Referer()
 	if referer == "" {
 		referer = "-"
@@ -71,23 +68,38 @@ func writeLog(w io.Writer, ww *wrapWriter, r *http.Request) {
 	}
 
 	// Connection and query
-	connID := " "
+	connID := "-"
 	if cid, ok := conndb.GetID(r.Context()); ok {
 		connID = cid.String()
 	}
-	query := "-"
-	duration := "-"
-	if ww.queryReport != nil {
-		query = ww.queryReport.query
-		duration = ww.queryReport.duration.String()
+
+	attrs := []slog.Attr{
+		slog.String("remote_addr", r.RemoteAddr),
+		slog.String("authn_id", authnIDStr),
+		slog.String("method", r.Method),
+		slog.String("path", r.URL.RequestURI()),
+		slog.String("proto", r.Proto),
+		slog.Int("status", ww.status),
+		slog.Int("size", ww.bsize),
+		slog.String("referer", referer),
+		slog.String("user_agent", userAgent),
+		slog.String("conn_id", connID),
 	}
-	fmt.Fprintf(w, "%s %q [%s] %q %q %q %d %d %s %q %s\n", remoteAddr, authnID, timestamp, requestLine, referer, userAgent, ww.status, ww.bsize, connID, query, duration)
+
+	if ww.queryReport != nil {
+		attrs = append(attrs,
+			slog.String("query", ww.queryReport.query),
+			slog.Duration("duration", ww.queryReport.duration),
+		)
+	}
+
+	logger.LogAttrs(r.Context(), slog.LevelInfo, "access", attrs...)
 }
 
-func WrapHandler(logWriter io.Writer, h http.Handler) http.Handler {
+func WrapHandler(logger *slog.Logger, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ww := &wrapWriter{base: w}
 		h.ServeHTTP(ww, r)
-		writeLog(logWriter, ww, r)
+		writeLog(logger, ww, r)
 	})
 }
