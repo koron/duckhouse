@@ -27,12 +27,14 @@ func initDB(ctx context.Context, db *sql.DB) error {
 			return err
 		}
 	}
-	return nil
+	// Finally, configure lock_configuration.
+	ex := &execContext{ctx: ctx, db: db}
+	set(ex, "lock_configuration", s.LockConfig)
+	return ex.err
 }
 
 func Open(ctx context.Context) (*sql.DB, error) {
 	s := GetSettings(ctx)
-	// FIXME: more flexible DSN.
 	db, err := sql.Open("duckdb", "?home_directory="+s.HomeDir)
 	if err != nil {
 		return nil, err
@@ -67,7 +69,6 @@ func (s *Settings) apply(ctx context.Context, db *sql.DB) error {
 	set(ex, "secret_directory", s.SecretDir)
 	set(ex, "temp_directory", s.TempDir)
 	set(ex, "max_temp_directory_size", s.MaxTempDirSize)
-	set(ex, "lock_configuration", s.LockConfig)
 	return ex.err
 }
 
