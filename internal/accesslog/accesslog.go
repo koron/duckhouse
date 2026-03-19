@@ -1,5 +1,5 @@
-// Package combinedlog provides access log for duckhouse
-package combinedlog
+// Package accesslog provides access log for duckhouse
+package accesslog
 
 import (
 	"context"

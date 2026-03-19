@@ -16,7 +16,7 @@ import (
 
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/koron/duckhouse/internal/authn"
-	"github.com/koron/duckhouse/internal/combinedlog"
+	"github.com/koron/duckhouse/internal/accesslog"
 	"github.com/koron/duckhouse/internal/conndb"
 	"github.com/koron/duckhouse/internal/duckdbinit"
 	"github.com/koron/duckhouse/internal/formatter"
@@ -182,7 +182,7 @@ func handleQuery(w http.ResponseWriter, r *http.Request) error {
 	// Execute a query
 	rows, err := db.QueryContext(q.Context(), query)
 	dur := time.Since(q.Start)
-	if r, ok := w.(combinedlog.QueryReporter); ok {
+	if r, ok := w.(accesslog.QueryReporter); ok {
 		r.QueryReport(query, dur)
 	}
 	w.Header().Set(DurationHeader, dur.String())
@@ -300,7 +300,7 @@ func newDuckhouseHandler(logger *slog.Logger) http.Handler {
 	mux.Handle("GET /status/queries/{$}", errorAwareHandler(handleStatusQueries))
 	mux.Handle("DELETE /status/queries/{queryID}", errorAwareHandler(handleInterruptQuery))
 	var h http.Handler = mux
-	h = combinedlog.WrapHandler(logger, h)
+	h = accesslog.WrapHandler(logger, h)
 	h = authn.WrapHandler(h)
 	return h
 }
