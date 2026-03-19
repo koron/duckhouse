@@ -207,3 +207,17 @@ $ curl 'http://127.0.0.1:9998/?f=table' -d "SELECT version() as VER"
 | `conn_id`     | Connection ID             | true     |
 | `query`       | Query                     | true     |
 | `duration`    | Take time for query       | true     |
+
+起動引数 `-acceslog.format` で、アクセスログのフォーマットを指定できる。
+有効な値は `text` と `json` でデフォルトは `text` 。
+`json` 指定時は JSONL (もしくは NDJSON) 形式で、そのまま DuckDB により読み込み可能。
+
+`text` ログのサンプル
+
+    time=2026-03-19T17:30:26.696+09:00 level=INFO msg=access remote_addr=127.0.0.1:32919 method=GET path=/ping/ proto=HTTP/1.1 user_agent=curl/8.19.0 status=200 size=4 conn_id=C_a544d397
+    time=2026-03-19T17:30:26.750+09:00 level=INFO msg=access remote_addr=127.0.0.1:32920 method=POST path="/?f=table" proto=HTTP/1.1 user_agent=curl/8.19.0 status=200 size=123 conn_id=C_6d827f53 query="SELECT version() as VER" duration=1.1263ms
+
+`json` ログのサンプル
+
+    {"time":"2026-03-19T17:31:38.1425577+09:00","level":"INFO","msg":"access","remote_addr":"127.0.0.1:35570","method":"GET","path":"/ping/","proto":"HTTP/1.1","user_agent":"curl/8.19.0","status":200,"size":4,"conn_id":"C_b447774a"}
+    {"time":"2026-03-19T17:31:38.1979854+09:00","level":"INFO","msg":"access","remote_addr":"127.0.0.1:35571","method":"POST","path":"/?f=table","proto":"HTTP/1.1","user_agent":"curl/8.19.0","status":200,"size":123,"conn_id":"C_89993ede","query":"SELECT version() as VER","duration":0}

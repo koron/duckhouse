@@ -2,6 +2,7 @@
 package combinedlog
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"time"
@@ -89,7 +90,7 @@ func writeLog(logger *slog.Logger, ww *wrapWriter, r *http.Request) {
 		)
 	}
 
-	logger.LogAttrs(r.Context(), slog.LevelInfo, "access", attrs...)
+	logger.LogAttrs(context.Background(), slog.LevelInfo, "access", attrs...)
 }
 
 func WrapHandler(logger *slog.Logger, h http.Handler) http.Handler {
