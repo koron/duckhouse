@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/duckdb/duckdb-go/v2"
-	"github.com/koron/duckhouse/internal/authn"
 	"github.com/koron/duckhouse/internal/accesslog"
+	"github.com/koron/duckhouse/internal/authn"
 	"github.com/koron/duckhouse/internal/conndb"
 	"github.com/koron/duckhouse/internal/duckdbinit"
 	"github.com/koron/duckhouse/internal/formatter"
@@ -28,15 +28,17 @@ const (
 	AuthnIDHeader      = "Duckhouse-Authnid"
 	ConnectionIDHeader = "Duckhouse-Connectionid"
 	DurationHeader     = "Duckhouse-Duration"
+
+	defaultFormat = "csv"
 )
 
 var (
 	accessLogger *slog.Logger
 
-	defaultFormat = "csv"
 	queryDatabase querydb.Database
 
-	withoutAuthz = false
+	withoutAuthz    = false
+	globalInitQuery string
 )
 
 func readQuery(r *http.Request) (string, error) {
@@ -128,7 +130,7 @@ func checkAuthz(w http.ResponseWriter, r *http.Request) error {
 	if !authn.Enable() {
 		return nil
 	}
-	if id, ok := authn.AuthnID(r); ok {
+	if id, ok := authn.AuthnID(r.Context()); ok {
 		// Insert AuthnID to response header.
 		w.Header().Set(AuthnIDHeader, id.String())
 		return nil
@@ -271,7 +273,14 @@ func handleInterruptQuery(w http.ResponseWriter, r *http.Request) error {
 }
 
 func newDuckDB(ctx context.Context) (*sql.DB, error) {
-	return duckdbinit.Open(ctx)
+	initQueries := make([]string, 0, 2)
+	if globalInitQuery != "" {
+		initQueries = append(initQueries, globalInitQuery)
+	}
+	if entry, ok := authn.AuthnEntry(ctx); ok && entry.InitQuery != "" {
+		initQueries = append(initQueries, entry.InitQuery)
+	}
+	return duckdbinit.Open(ctx, initQueries...)
 }
 
 func checkDB(ctx context.Context) error {
@@ -422,7 +431,7 @@ func main() {
 			slog.Error("db.initquery failuare", "error", err)
 			os.Exit(1)
 		}
-		duckdbinit.InitQuery = q
+		globalInitQuery = q
 	}
 
 	if err := run(addr); err != nil {

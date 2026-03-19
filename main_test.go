@@ -358,6 +358,17 @@ func TestAuthnQuery(t *testing.T) {
 	})
 }
 
+func TestAuthnInitQuery(t *testing.T) {
+	ts := startServer0(t)
+	setupAuthn(t, "testdata/authn.json", false)
+	// Verify that the initial value of `threads` is 1.
+	testAuthorizedQuery(t, ts, `SELECT current_setting('threads') AS T`, "T\n1\n", new("token1"), authorizationBearer("token-0123456789abcdef"))
+	// Disconnect all connections and reset the DuckDB instance.
+	ts.Client().Transport.(*http.Transport).CloseIdleConnections()
+	// The initial value of threads is 1, but it is overwritten to 2 by authn's InitQuery.
+	testAuthorizedQuery(t, ts, `SELECT current_setting('threads') AS T`, "T\n2\n", new("threads-2"), authorizationBearer("token-threads-2"))
+}
+
 const (
 	idSyntaxError = "ID syntax error: query ID should starts with \"Q_\"\n"
 )

@@ -21,14 +21,16 @@ func GetSettings(ctx context.Context) *Settings {
 }
 
 // initDB initializes a DB instance with parameters associated with the context.
-func initDB(ctx context.Context, db *sql.DB) error {
+func initDB(ctx context.Context, db *sql.DB, initQueries []string) error {
 	s := GetSettings(ctx)
 	if err := s.apply(ctx, db); err != nil {
 		return err
 	}
-	if InitQuery != "" {
-		if _, err := db.ExecContext(ctx, InitQuery); err != nil {
-			return err
+	for _, initQuery := range initQueries {
+		if initQuery != "" {
+			if _, err := db.ExecContext(ctx, initQuery); err != nil {
+				return err
+			}
 		}
 	}
 	// Finally, configure lock_configuration.
@@ -37,13 +39,13 @@ func initDB(ctx context.Context, db *sql.DB) error {
 	return ex.err
 }
 
-func Open(ctx context.Context) (*sql.DB, error) {
+func Open(ctx context.Context, initQueries ...string) (*sql.DB, error) {
 	s := GetSettings(ctx)
 	db, err := sql.Open("duckdb", "?home_directory="+s.HomeDir)
 	if err != nil {
 		return nil, err
 	}
-	if err := initDB(ctx, db); err != nil {
+	if err := initDB(ctx, db, initQueries); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -95,5 +97,3 @@ func set[T comparable](ex *execContext, name string, v T) {
 }
 
 var DefaultSettings Settings
-
-var InitQuery string

@@ -44,20 +44,19 @@ func TestLockConfig(t *testing.T) {
 			Threads:    1,
 			LockConfig: true,
 		})
-		duckdbinit.InitQuery = `SET threads = 4`
-		db, err := duckdbinit.Open(ctx)
+		db, err := duckdbinit.Open(ctx, "SET threads = 4")
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer db.Close()
 
-		// Verify that InitQuery is overwriting Settings.
+		// Verify that initQueries is overwriting Settings.
 		testSetting(t, db, "threads", 4)
 		if t.Failed() {
 			return
 		}
 
-		// Verify that changes cannot be made after InitQuery.
+		// Verify that changes cannot be made after initQueries.
 		_, err = db.ExecContext(ctx, "SET threads = 8")
 		assert.Equal(t, `Invalid Input Error: Cannot change configuration option "threads" - the configuration has been locked`, err.Error())
 	})
@@ -67,20 +66,19 @@ func TestLockConfig(t *testing.T) {
 			Threads:    1,
 			LockConfig: false,
 		})
-		duckdbinit.InitQuery = `SET threads = 4`
-		db, err := duckdbinit.Open(ctx)
+		db, err := duckdbinit.Open(ctx, "SET threads = 4")
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer db.Close()
 
-		// Verify that InitQuery is overwriting Settings.
+		// Verify that initQueries is overwriting Settings.
 		testSetting(t, db, "threads", 4)
 		if t.Failed() {
 			return
 		}
 
-		// Verify that changes can be made after InitQuery.
+		// Verify that changes can be made after initQueries.
 		_, err = db.ExecContext(ctx, "SET threads = 8")
 		if err != nil {
 			t.Fatalf("failed to set threads: %s", err)

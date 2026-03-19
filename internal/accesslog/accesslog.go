@@ -55,7 +55,7 @@ func writeLog(logger *slog.Logger, ww *wrapWriter, r *http.Request) {
 
 	// Basic information: remote, authn
 	attrs = append(attrs, slog.String("remote_addr", r.RemoteAddr))
-	authnID, ok := authn.AuthnID(r)
+	authnID, ok := authn.AuthnID(r.Context())
 	if ok {
 		attrs = append(attrs, slog.String("authn_id", authnID.String()))
 	}
