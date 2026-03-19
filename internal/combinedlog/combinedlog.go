@@ -50,42 +50,38 @@ func (w *wrapWriter) QueryReport(query string, duration time.Duration) {
 }
 
 func writeLog(logger *slog.Logger, ww *wrapWriter, r *http.Request) {
+	attrs := make([]slog.Attr, 0, 12)
+
 	// Basic information: remote, authn
+	attrs = append(attrs, slog.String("remote_addr", r.RemoteAddr))
 	authnID, ok := authn.AuthnID(r)
-	authnIDStr := "-"
 	if ok {
-		authnIDStr = authnID.String()
+		attrs = append(attrs, slog.String("authn_id", authnID.String()))
 	}
 
-	// Request information: referer, user-agent
-	referer := r.Referer()
-	if referer == "" {
-		referer = "-"
-	}
-	userAgent := r.UserAgent()
-	if userAgent == "" {
-		userAgent = "-"
-	}
-
-	// Connection and query
-	connID := "-"
-	if cid, ok := conndb.GetID(r.Context()); ok {
-		connID = cid.String()
-	}
-
-	attrs := []slog.Attr{
-		slog.String("remote_addr", r.RemoteAddr),
-		slog.String("authn_id", authnIDStr),
+	// Request information: method, path, protocol version, referer,
+	// user-agent, stauts, response size
+	attrs = append(attrs,
 		slog.String("method", r.Method),
 		slog.String("path", r.URL.RequestURI()),
 		slog.String("proto", r.Proto),
+	)
+	if referer := r.Referer(); referer != "" {
+		attrs = append(attrs, slog.String("referer", referer))
+
+	}
+	if userAgent := r.UserAgent(); userAgent != "" {
+		attrs = append(attrs, slog.String("user_agent", userAgent))
+	}
+	attrs = append(attrs,
 		slog.Int("status", ww.status),
 		slog.Int("size", ww.bsize),
-		slog.String("referer", referer),
-		slog.String("user_agent", userAgent),
-		slog.String("conn_id", connID),
-	}
+	)
 
+	// Connection and query
+	if cid, ok := conndb.GetID(r.Context()); ok {
+		attrs = append(attrs, slog.String("conn_id", cid.String()))
+	}
 	if ww.queryReport != nil {
 		attrs = append(attrs,
 			slog.String("query", ww.queryReport.query),
