@@ -9,15 +9,33 @@ import (
 	"github.com/koron/duckhouse/internal/duckdbinit"
 )
 
-func testThreads(t *testing.T, db *sql.DB, want int) {
+func testSetting[T any](t *testing.T, db *sql.DB, name string, want T) {
 	t.Helper()
-	var got int
-	err := db.QueryRowContext(t.Context(), "SELECT current_setting('threads')").Scan(&got)
+	var got T
+	err := db.QueryRowContext(t.Context(), "SELECT current_setting(?)", name).Scan(&got)
 	if err != nil {
 		t.Errorf("failed to retrieve threads setting: %s", err)
 		return
 	}
 	assert.Equal(t, want, got)
+}
+
+func TestDefaultSettings(t *testing.T) {
+	duckdbinit.DefaultSettings = duckdbinit.Settings{
+		Threads:     3,
+		MemoryLimit: "2GiB",
+		LockConfig:  true,
+	}
+	db, err := duckdbinit.Open(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		db.Close()
+	})
+	testSetting(t, db, "threads", 3)
+	testSetting(t, db, "memory_limit", "2.0 GiB")
+	testSetting(t, db, "lock_configuration", true)
 }
 
 func TestLockConfig(t *testing.T) {
@@ -34,7 +52,7 @@ func TestLockConfig(t *testing.T) {
 		defer db.Close()
 
 		// Verify that InitQuery is overwriting Settings.
-		testThreads(t, db, 4)
+		testSetting(t, db, "threads", 4)
 		if t.Failed() {
 			return
 		}
@@ -57,7 +75,7 @@ func TestLockConfig(t *testing.T) {
 		defer db.Close()
 
 		// Verify that InitQuery is overwriting Settings.
-		testThreads(t, db, 4)
+		testSetting(t, db, "threads", 4)
 		if t.Failed() {
 			return
 		}
@@ -67,6 +85,6 @@ func TestLockConfig(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to set threads: %s", err)
 		}
-		testThreads(t, db, 8)
+		testSetting(t, db, "threads", 8)
 	})
 }
