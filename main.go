@@ -363,7 +363,7 @@ func main() {
 	flag.BoolVar(&debugFlag, "debug", false, `enable debug log`)
 	flag.IntVar(&maxDB, "maxdb", 4, `maximum number of DB instances`)
 	flag.StringVar(&addr, "addr", "localhost:9998", `address hosts HTTP server`)
-	flag.StringVar(&accessLogFormat, "accesslog.format", "json", `access log format: "text" or "json"`)
+	flag.StringVar(&accessLogFormat, "accesslog.format", "text", `access log format: "text" or "json"`)
 	flag.StringVar(&authnFile, "authnfile", "", `authentication information file`)
 	flag.BoolVar(&noauthz, "noauthz", false, `executing queries etc. w/o authz`)
 	flag.IntVar(&dbThreads, "db.threads", 1, `initial value of DB "threads"`)
@@ -380,9 +380,9 @@ func main() {
 
 	switch accessLogFormat {
 	case "text":
-		accessLogger = slog.New(slog.NewTextHandler(os.Stderr, nil))
+		accessLogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 	case "json":
-		accessLogger = slog.New(slog.NewJSONHandler(os.Stderr, nil))
+		accessLogger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	default:
 		slog.Error("unsupported access log format", "format", accessLogFormat)
 		os.Exit(1)
