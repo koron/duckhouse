@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -50,7 +51,7 @@ func startServer0(t *testing.T) *httptest.Server {
 		LockConfig:     dbLockConfig,
 	}
 
-	ts := httptest.NewServer(newDuckhouseHandler(io.Discard))
+	ts := httptest.NewServer(newDuckhouseHandler(slog.New(slog.NewTextHandler(io.Discard, nil))))
 	t.Cleanup(ts.Close)
 
 	conndb.SetMaxDB(maxDB)
