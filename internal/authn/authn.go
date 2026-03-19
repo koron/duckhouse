@@ -25,38 +25,44 @@ func Enable() bool {
 	return Default != nil
 }
 
-func extractID(r *http.Request) ID {
+func extractEntry(r *http.Request) *Entry {
 	if Default == nil {
-		return ""
+		return nil
 	}
 	s := r.Header.Get("Authorization")
-	e := Default.index[s]
-	if e == nil {
-		return ""
-	}
-	return e.ID
+	return Default.index[s]
 }
 
-type idKey struct{}
+type entryKey struct{}
+
+// WinEntry creates and returns a context.Context to which the Entry is bound.
+func withEntry(ctx context.Context, entry *Entry) context.Context {
+	return context.WithValue(ctx, entryKey{}, entry)
+}
 
 func WrapHandler(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Embed authenticity information to request context.
-		id := extractID(r)
-		if id != "" {
-			ctx := context.WithValue(r.Context(), idKey{}, id)
+		entry := extractEntry(r)
+		if entry != nil {
+			ctx := withEntry(r.Context(), entry)
 			r = r.WithContext(ctx)
 		}
 		h.ServeHTTP(w, r)
 	})
 }
 
-func AuthnID(r *http.Request) (ID, bool) {
-	id, ok := r.Context().Value(idKey{}).(ID)
+func AuthnEntry(ctx context.Context) (*Entry, bool) {
+	entry, ok := ctx.Value(entryKey{}).(*Entry)
+	return entry, ok
+}
+
+func AuthnID(ctx context.Context) (ID, bool) {
+	entry, ok := AuthnEntry(ctx)
 	if !ok {
 		return NoAuthn, false
 	}
-	return id, true
+	return entry.ID, true
 }
 
 type Type string
@@ -80,6 +86,8 @@ type Entry struct {
 
 	// Used for Bearer type
 	Token *string `json:"token,omitempty"`
+
+	InitQuery string `json:"init_query,omitempty"`
 }
 
 func (e *Entry) headerValue() string {
