@@ -5,6 +5,8 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/koron/duckhouse)](https://goreportcard.com/report/github.com/koron/duckhouse)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/koron/duckhouse)
 
+![Duckhouse Logo 512x512](./image/DuckhouseLogo-512.png)
+
 Duckhouse は短寿命な DuckDB のインメモリインスタンスを提供する HTTP サーバーです。
 
 cURL などにより DuckDB プレイグラウンドへクエリーを投げることができます。
@@ -111,6 +113,10 @@ $ curl 'http://127.0.0.1:9998/?f=table' -d "SELECT version() as VER"
 -   Method: `POST` or `GET`
 -   Request Parameters:
     -   クエリーの内容: BODY, `q` クエリー文字列, `query` クエリー文字列 (優先順)
+
+        クエリーは `;` で接続することで1度に複数を順番に実行できます。
+        その場合、出力は最後のクエリーのものになります。
+
     -   出力フォーマット指定: `format` クエリー文字列, `f` クエリー文字列 (優先順)
 
         現在指定可能なフォーマットは次の5つ: `csv` (default), `html`, `markdown`, `table`, `avro`
