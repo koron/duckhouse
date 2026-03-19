@@ -367,6 +367,9 @@ func TestAuthnInitQuery(t *testing.T) {
 	ts.Client().Transport.(*http.Transport).CloseIdleConnections()
 	// The initial value of threads is 1, but it is overwritten to 2 by authn's InitQuery.
 	testAuthorizedQuery(t, ts, `SELECT current_setting('threads') AS T`, "T\n2\n", new("threads-2"), authorizationBearer("token-threads-2"))
+	// Verify that there is no impact on authentication without an InitQuery.
+	ts.Client().Transport.(*http.Transport).CloseIdleConnections()
+	testAuthorizedQuery(t, ts, `SELECT current_setting('threads') AS T`, "T\n1\n", new("user1"), authorizationBasic("user1", "abcd1234"))
 }
 
 const (
