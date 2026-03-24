@@ -16,20 +16,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/koron/duckhouse/internal/assert"
 	"github.com/koron/duckhouse/internal/authn"
 	"github.com/koron/duckhouse/internal/conndb"
 	"github.com/koron/duckhouse/internal/duckdbinit"
 )
-
-func assertEqual[T any](t *testing.T, want, got T, options ...cmp.Option) {
-	t.Helper()
-	if d := cmp.Diff(want, got, options...); d != "" {
-		t.Errorf("assert failed, mismatch: -want +got\n%s", d)
-	}
-}
 
 func startServer0(t *testing.T) *httptest.Server {
 	var (
@@ -208,7 +200,7 @@ func testQuery1(t *testing.T, ts *httptest.Server, query, want string, options .
 		t.Error(err)
 		return rh
 	}
-	assertEqual(t, want, got)
+	assert.Equal(t, want, got)
 	return rh
 }
 
@@ -236,7 +228,7 @@ func TestPing(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	assertEqual(t, "OK\r\n", got)
+	assert.Equal(t, "OK\r\n", got)
 }
 
 func TestQueryDuckDBVersion(t *testing.T) {
@@ -265,7 +257,7 @@ func TestStatusConnections(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	assertEqual(t, []TestConnStatus{
+	assert.Equal(t, []TestConnStatus{
 		{DBStats: sql.DBStats{MaxIdleClosed: 2}},
 	}, got, cmpopts.IgnoreFields(TestConnStatus{}, "ID"))
 	wg.Wait()
@@ -294,7 +286,7 @@ func TestCancelQuery(t *testing.T) {
 			if err != nil {
 				t.Errorf("slow query failed: %s", err)
 			}
-			assertEqual(t, want, got)
+			assert.Equal(t, want, got)
 		}()
 		time.Sleep(100 * time.Millisecond)
 		// List executing queries
@@ -313,7 +305,7 @@ func TestCancelQuery(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
-		assertEqual(t, "", got)
+		assert.Equal(t, "", got)
 		wg.Wait()
 	})
 	t.Run("not found", func(t *testing.T) {
@@ -322,7 +314,7 @@ func TestCancelQuery(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
-		assertEqual(t, "Not Found\n", got)
+		assert.Equal(t, "Not Found\n", got)
 	})
 }
 
@@ -334,7 +326,7 @@ func testAuthorizedQuery(t *testing.T, ts *httptest.Server, query, want string, 
 		t.Errorf("request failed: %s", err)
 		return
 	}
-	assertEqual(t, want, got)
+	assert.Equal(t, want, got)
 	if wantAuthID == nil {
 		if s, ok := resp.Header[AuthnIDHeader]; ok {
 			t.Errorf("unexpected authn ID provided: %s", s)
@@ -346,7 +338,7 @@ func testAuthorizedQuery(t *testing.T, ts *httptest.Server, query, want string, 
 		t.Error("unavailable authnID")
 		return
 	}
-	assertEqual(t, *wantAuthID, gotAuthID[0])
+	assert.Equal(t, *wantAuthID, gotAuthID[0])
 }
 
 func testUnauthorizedQuery(t *testing.T, ts *httptest.Server, query string, options ...RequestOption) {
@@ -357,7 +349,7 @@ func testUnauthorizedQuery(t *testing.T, ts *httptest.Server, query string, opti
 		t.Errorf("request failed: %s", err)
 		return
 	}
-	assertEqual(t, "Unauthorized\n", got)
+	assert.Equal(t, "Unauthorized\n", got)
 	if s, ok := resp.Header[AuthnIDHeader]; ok {
 		t.Errorf("unexpected authn ID provided: %s", s)
 	}
@@ -416,7 +408,7 @@ func testAuthorizedInterruptQuery(t *testing.T, ts *httptest.Server, queryID str
 		t.Errorf("request failed: %s", err)
 		return
 	}
-	assertEqual(t, want, got)
+	assert.Equal(t, want, got)
 
 	if wantAuthID == nil {
 		if s, ok := resp.Header[AuthnIDHeader]; ok {
@@ -429,7 +421,7 @@ func testAuthorizedInterruptQuery(t *testing.T, ts *httptest.Server, queryID str
 		t.Error("unavailable authnID")
 		return
 	}
-	assertEqual(t, *wantAuthID, gotAuthID[0])
+	assert.Equal(t, *wantAuthID, gotAuthID[0])
 }
 
 func testUnauthorizedInterruptQuery(t *testing.T, ts *httptest.Server, queryID string, options ...RequestOption) {
@@ -440,7 +432,7 @@ func testUnauthorizedInterruptQuery(t *testing.T, ts *httptest.Server, queryID s
 		t.Errorf("request failed: %s", err)
 		return
 	}
-	assertEqual(t, "Unauthorized\n", got)
+	assert.Equal(t, "Unauthorized\n", got)
 	if s, ok := resp.Header[AuthnIDHeader]; ok {
 		t.Errorf("unexpected authn ID provided: %s", s)
 	}
@@ -496,6 +488,6 @@ func TestPrivateDir(t *testing.T) {
 
 	// Verify that the private directory is gone after disconnected.
 	closeIdleConnections(ts)
-	time.Sleep(100*time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	assert.IsNotExist(t, filepath.Join(dbPrivateRoot, rh1.ConnectionID))
 }
