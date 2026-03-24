@@ -18,6 +18,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/koron/duckhouse/internal/assert"
 	"github.com/koron/duckhouse/internal/authn"
 	"github.com/koron/duckhouse/internal/conndb"
 	"github.com/koron/duckhouse/internal/duckdbinit"
@@ -139,6 +140,8 @@ func readResponse2(r *http.Response, err error, codeBegin, codeEnd int) (string,
 	}
 	defer r.Body.Close()
 	if r.StatusCode < codeBegin || r.StatusCode > codeEnd {
+		b, _ := io.ReadAll(r.Body)
+		slog.Warn("request failed", "status", r.StatusCode, "body", string(b))
 		return "", fmt.Errorf("request failed: %d (%s) - should be between %d and %d", r.StatusCode, r.Status, codeBegin, codeEnd)
 	}
 	b, err := io.ReadAll(r.Body)
@@ -177,19 +180,43 @@ func readJSONL[T any](r *http.Response, err error) ([]T, error) {
 }
 
 // testQuery0 checks CSV the response for the query.
-func testQuery0(t *testing.T, ts *httptest.Server, query, want string) {
-	testQuery1(t, ts, query, want)
+func testQuery0(t *testing.T, ts *httptest.Server, query, want string) *responseHeader {
+	return testQuery1(t, ts, query, want)
+}
+
+type responseHeader struct {
+	AuthnID      string
+	ConnectionID string
+	Duration     string
+}
+
+func parseResponseHeader(r *http.Response) *responseHeader {
+	return &responseHeader{
+		AuthnID:      r.Header.Get(AuthnIDHeader),
+		ConnectionID: r.Header.Get(ConnectionIDHeader),
+		Duration:     r.Header.Get(DurationHeader),
+	}
 }
 
 // testQuery1 checks CSV the response for the query, with RequestOptions.
-func testQuery1(t *testing.T, ts *httptest.Server, query, want string, options ...RequestOption) {
+func testQuery1(t *testing.T, ts *httptest.Server, query, want string, options ...RequestOption) *responseHeader {
 	t.Helper()
-	got, err := readResponse(doPost(ts, "/?f=csv", query, options...))
+	resp, err := doPost(ts, "/?f=csv", query, options...)
+	rh := parseResponseHeader(resp)
+	got, err := readResponse(resp, err)
 	if err != nil {
 		t.Error(err)
-		return
+		return rh
 	}
 	assertEqual(t, want, got)
+	return rh
+}
+
+func closeIdleConnections(ts *httptest.Server) {
+	transport, ok := ts.Client().Transport.(*http.Transport)
+	if ok {
+		transport.CloseIdleConnections()
+	}
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -368,11 +395,11 @@ func TestAuthnInitQuery(t *testing.T) {
 	// Verify that the initial value of `threads` is 1.
 	testAuthorizedQuery(t, ts, `SELECT current_setting('threads') AS T`, "T\n1\n", new("token1"), authorizationBearer("token-0123456789abcdef"))
 	// Disconnect all connections and reset the DuckDB instance.
-	ts.Client().Transport.(*http.Transport).CloseIdleConnections()
+	closeIdleConnections(ts)
 	// The initial value of threads is 1, but it is overwritten to 2 by authn's InitQuery.
 	testAuthorizedQuery(t, ts, `SELECT current_setting('threads') AS T`, "T\n2\n", new("threads-2"), authorizationBearer("token-threads-2"))
 	// Verify that there is no impact on authentication without an InitQuery.
-	ts.Client().Transport.(*http.Transport).CloseIdleConnections()
+	closeIdleConnections(ts)
 	testAuthorizedQuery(t, ts, `SELECT current_setting('threads') AS T`, "T\n1\n", new("user1"), authorizationBasic("user1", "abcd1234"))
 }
 
@@ -441,4 +468,34 @@ func TestAuthnInterruptQuery(t *testing.T) {
 		testAuthorizedInterruptQuery(t, ts, "dummy", idSyntaxError, new("token1"), authorizationBearer("token-0123456789abcdef"))
 		testAuthorizedInterruptQuery(t, ts, "dummy", idSyntaxError, nil)
 	})
+}
+
+func TestSharedDir(t *testing.T) {
+	ts := startServer0(t)
+	testQuery0(t, ts, `COPY (SELECT * FROM duckdb_settings() LIMIT 50) TO (public_dir('settings.csv'))`, "Count\n50\n")
+
+	assert.IsRegularFile(t, filepath.Join(dbSharedDir, "settings.csv"))
+	if t.Failed() {
+		return
+	}
+
+	closeIdleConnections(ts)
+	testQuery0(t, ts, `CREATE TABLE shared_settings AS SELECT * FROM read_csv_auto(public_dir('settings.csv'))`, "Count\n50\n")
+}
+
+func TestPrivateDir(t *testing.T) {
+	ts := startServer0(t)
+
+	// The contents of the private directory are preserved.
+	rh1 := testQuery0(t, ts, `COPY (SELECT * FROM duckdb_settings() LIMIT 50) TO (private_dir('settings.csv'))`, "Count\n50\n")
+	assert.IsRegularFile(t, filepath.Join(dbPrivateRoot, rh1.ConnectionID, "settings.csv"))
+	if t.Failed() {
+		return
+	}
+	testQuery0(t, ts, `CREATE TABLE shared_settings AS SELECT * FROM read_csv_auto(private_dir('settings.csv'))`, "Count\n50\n")
+
+	// Verify that the private directory is gone after disconnected.
+	closeIdleConnections(ts)
+	time.Sleep(100*time.Millisecond)
+	assert.IsNotExist(t, filepath.Join(dbPrivateRoot, rh1.ConnectionID))
 }

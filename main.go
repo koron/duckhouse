@@ -298,6 +298,12 @@ func getPrivateDir(ctx context.Context, makeDir bool) (string, error) {
 func newDuckDB(ctx context.Context) (*sql.DB, error) {
 	// Compose duckdbinit.Settings
 	settings := dbSettings
+	if dbSharedDir != "" {
+		if err := os.MkdirAll(dbSharedDir, 0777); err != nil {
+			return nil, err
+		}
+		settings.AllowedDirectories = append(settings.AllowedDirectories, dbSharedDir)
+	}
 	privateDir, err := getPrivateDir(ctx, true)
 	if err != nil {
 		return nil, err
@@ -472,9 +478,6 @@ func main() {
 		slog.Error("failed to determine shared directory", "error", err)
 		os.Exit(1)
 	}
-	if err := os.MkdirAll(sharedDir, 0777); err != nil {
-		slog.Error("failed to create shared directory", "error", err)
-	}
 	dbSharedDir = sharedDir
 
 	privateRoot, err := filepath.Abs(filepath.Join(dbHomeDir, "private"))
@@ -492,8 +495,6 @@ func main() {
 		SecretDir:      filepath.Join(dbHomeDir, "stored_secrets"),
 		TempDir:        filepath.Join(dbHomeDir, "tmp"),
 		MaxTempDirSize: dbMaxTempDirSize,
-
-		AllowedDirectories: []string{dbSharedDir},
 
 		EnableExternalAccess: dbExternalAccess,
 		LockConfig:           dbLockConfig,
