@@ -7,23 +7,8 @@ import (
 	"net/url"
 )
 
-type settingsKey struct{}
-
-func WithSettings(ctx context.Context, s Settings) context.Context {
-	return context.WithValue(ctx, settingsKey{}, &s)
-}
-
-func GetSettings(ctx context.Context) *Settings {
-	s, ok := ctx.Value(settingsKey{}).(*Settings)
-	if !ok {
-		return new(DefaultSettings)
-	}
-	return s
-}
-
 // initDB initializes a DB instance with parameters associated with the context.
-func initDB(ctx context.Context, db *sql.DB, initQueries []string) error {
-	s := GetSettings(ctx)
+func initDB(ctx context.Context, s Settings, db *sql.DB, initQueries []string) error {
 	if err := s.apply(ctx, db); err != nil {
 		return err
 	}
@@ -45,15 +30,14 @@ func initDB(ctx context.Context, db *sql.DB, initQueries []string) error {
 	return ex.err
 }
 
-func Open(ctx context.Context, initQueries ...string) (*sql.DB, error) {
-	s := GetSettings(ctx)
+func Open(ctx context.Context, s Settings, initQueries ...string) (*sql.DB, error) {
 	p := url.Values{}
 	p.Add("home_directory", s.HomeDir)
 	db, err := sql.Open("duckdb", "?"+p.Encode())
 	if err != nil {
 		return nil, err
 	}
-	if err := initDB(ctx, db, initQueries); err != nil {
+	if err := initDB(ctx, s, db, initQueries); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -77,7 +61,7 @@ type Settings struct {
 }
 
 // apply applies limits for the resources used by a DuckDB instance.
-func (s *Settings) apply(ctx context.Context, db *sql.DB) error {
+func (s Settings) apply(ctx context.Context, db *sql.DB) error {
 	// NOTE: home_directory should be specified in DSN
 	ex := &execContext{ctx: ctx, db: db}
 	set(ex, "threads", s.Threads)
@@ -117,5 +101,3 @@ func setNoCheck(ex *execContext, name string, v any) {
 	_, err := ex.db.ExecContext(ex.ctx, "SET GLOBAL "+name+" = ?", v)
 	ex.err = err
 }
-
-var DefaultSettings Settings

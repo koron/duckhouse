@@ -17,6 +17,7 @@ import (
 type Manager struct {
 	MaxDB  int
 	Opener Opener
+	Closer Closer
 
 	idSet    sync.Map
 	connToID sync.Map
@@ -34,6 +35,16 @@ type OpenerFunc func(ctx context.Context) (*sql.DB, error)
 
 func (fn OpenerFunc) Open(ctx context.Context) (*sql.DB, error) {
 	return fn(ctx)
+}
+
+type Closer interface {
+	Close(ctx context.Context, db *sql.DB) error
+}
+
+type CloserFunc func(ctx context.Context, db *sql.DB) error
+
+func (fn CloserFunc) Close(ctx context.Context, db *sql.DB) error {
+	return fn(ctx, db)
 }
 
 type ID uint32
@@ -73,25 +84,42 @@ func dbToStr(db *sql.DB) string {
 	return fmt.Sprintf("%p", db)
 }
 
+func (m *Manager) closeDB(db *sql.DB, id ID) error {
+	ctx := context.WithValue(context.Background(), connIDKey{}, id)
+	if m.Closer == nil {
+		return db.Close()
+	}
+	return m.Closer.Close(ctx, db)
+}
+
 func (m *Manager) closeConn(c net.Conn) error {
 	rawid, ok := m.connToID.LoadAndDelete(c)
 	if !ok {
 		return fmt.Errorf("no ID for net.Conn=%p", c)
 	}
+
 	m.dbMutex.Lock()
-	defer m.dbMutex.Unlock()
 	id := rawid.(ID)
 	m.idSet.Delete(id)
 	rawdb, ok := m.idToDB.LoadAndDelete(id)
 	if !ok {
+		m.dbMutex.Unlock()
 		return nil
 	}
-	db := rawdb.(*sql.DB)
-	db.Close()
 	if m.dbCount > 0 {
 		m.dbCount--
 	}
-	slog.Debug("DB closed", "connID", id, "DB", dbToStr(db), "count", m.dbCount)
+	count := m.dbCount
+	m.dbMutex.Unlock()
+
+	go func(db *sql.DB) {
+		err := m.closeDB(db, id)
+		if err != nil {
+			slog.Warn("failed to close DB", "connID", id, "error", err)
+		}
+		slog.Debug("DB closed", "connID", id, "DB", dbToStr(db), "count", count)
+	}(rawdb.(*sql.DB))
+
 	return nil
 }
 

@@ -19,6 +19,10 @@ func SetOpener(opener Opener) {
 	Default.Opener = opener
 }
 
+func SetCloser(closer Closer) {
+	Default.Closer = closer
+}
+
 func ConnContext(ctx context.Context, c net.Conn) context.Context {
 	return Default.ConnContext(ctx, c)
 }

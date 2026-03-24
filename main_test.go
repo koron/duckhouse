@@ -40,7 +40,7 @@ func startServer0(t *testing.T) *httptest.Server {
 		dbLockConfig     = true
 	)
 
-	duckdbinit.DefaultSettings = duckdbinit.Settings{
+	dbSettings = duckdbinit.Settings{
 		HomeDir:        dbHomeDir,
 		Threads:        dbThreads,
 		MemoryLimit:    dbMemoryLimiit,
@@ -50,12 +50,16 @@ func startServer0(t *testing.T) *httptest.Server {
 		MaxTempDirSize: dbMaxTempDirSize,
 		LockConfig:     dbLockConfig,
 	}
+	dbSharedDir = filepath.Join(dbHomeDir, "shared")
+	dbPrivateRoot = filepath.Join(dbHomeDir, "private")
 
 	ts := httptest.NewServer(newDuckhouseHandler(slog.New(slog.NewTextHandler(io.Discard, nil))))
 	t.Cleanup(ts.Close)
 
 	conndb.SetMaxDB(maxDB)
 	conndb.SetOpener(conndb.OpenerFunc(newDuckDB))
+	conndb.SetCloser(conndb.CloserFunc(closeDuckDB))
+
 	ts.Config.ConnContext = conndb.ConnContext
 	ts.Config.ConnState = conndb.ConnState
 
