@@ -430,7 +430,7 @@ func main() {
 	flag.StringVar(&dbHomeDir, "db.homedir", filepath.Join(getwd(), ".duckdb"), `home dir for duckdb`)
 	flag.StringVar(&dbMaxTempDirSize, "db.maxtempdirsize", "10GiB", `max size of temporary dir`)
 	flag.BoolVar(&dbExternalAccess, "db.externalaccess", false, `enable external access`)
-	flag.BoolVar(&dbLockConfig, "db.lockconfig", true, `lock DB settings. to unlock use -db.lockconfig=false`)
+	flag.BoolVar(&dbLockConfig, "db.lockconfig", true, `lock DB settings. to unlock -db.lockconfig=false`)
 	flag.StringVar(&dbInitQuery, "db.initquery", "", `DB initialization query or file (prefixed with '@')`)
 	flag.Parse()
 
@@ -495,8 +495,8 @@ func main() {
 
 		AllowedDirectories: []string{dbSharedDir},
 
-		DisableExternalAccess: !dbExternalAccess,
-		LockConfig:            dbLockConfig,
+		EnableExternalAccess: dbExternalAccess,
+		LockConfig:           dbLockConfig,
 	}
 	if dbInitQuery != "" {
 		q, err := stringOrReadFile(dbInitQuery, "db.initquery")

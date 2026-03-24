@@ -21,7 +21,7 @@ func initDB(ctx context.Context, s Settings, db *sql.DB, initQueries []string) e
 	}
 	// Finally, configure lock_configuration.
 	ex := &execContext{ctx: ctx, db: db}
-	if s.DisableExternalAccess {
+	if !s.EnableExternalAccess {
 		setNoCheck(ex, "enable_external_access", false)
 	}
 	if s.LockConfig {
@@ -56,8 +56,8 @@ type Settings struct {
 
 	AllowedDirectories []string
 
-	DisableExternalAccess bool
-	LockConfig            bool
+	EnableExternalAccess bool
+	LockConfig           bool
 }
 
 // apply applies limits for the resources used by a DuckDB instance.
