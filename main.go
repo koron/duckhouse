@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -39,6 +40,8 @@ var (
 
 	withoutAuthz    = false
 	globalInitQuery string
+
+	dbSharedDir string
 )
 
 func readQuery(r *http.Request) (string, error) {
@@ -273,7 +276,10 @@ func handleInterruptQuery(w http.ResponseWriter, r *http.Request) error {
 }
 
 func newDuckDB(ctx context.Context) (*sql.DB, error) {
-	initQueries := make([]string, 0, 2)
+	initQueries := make([]string, 0, 3)
+	if dbSharedDir != "" {
+		initQueries = append(initQueries, fmt.Sprintf("CREATE MACRO public_dir(name) AS concat('%s', '/', name)", dbSharedDir))
+	}
 	if globalInitQuery != "" {
 		initQueries = append(initQueries, globalInitQuery)
 	}
@@ -366,6 +372,7 @@ func main() {
 		dbHomeDir        string
 		dbMaxTempDirSize string
 		dbInitQuery      string
+		dbExternalAccess bool
 		dbLockConfig     bool
 	)
 
@@ -379,6 +386,7 @@ func main() {
 	flag.StringVar(&dbMemoryLimiit, "db.memorylimit", "1GiB", `initial value of DB "memory_limit"`)
 	flag.StringVar(&dbHomeDir, "db.homedir", filepath.Join(getwd(), ".duckdb"), `home dir for duckdb`)
 	flag.StringVar(&dbMaxTempDirSize, "db.maxtempdirsize", "10GiB", `max size of temporary dir`)
+	flag.BoolVar(&dbExternalAccess, "db.externalaccess", false, `enable external access`)
 	flag.BoolVar(&dbLockConfig, "db.lockconfig", true, `lock DB settings. to unlock use -db.lockconfig=false`)
 	flag.StringVar(&dbInitQuery, "db.initquery", "", `DB initialization query or file (prefixed with '@')`)
 	flag.Parse()
@@ -415,6 +423,16 @@ func main() {
 		withoutAuthz = true
 	}
 
+	sharedDir, err := filepath.Abs(filepath.Join(dbHomeDir, "shared"))
+	if err != nil {
+		slog.Error("failed to determine shared directory", "error", err)
+		os.Exit(1)
+	}
+	if err := os.MkdirAll(sharedDir, 0777); err != nil {
+		slog.Error("failed to create shared directory", "error", err)
+	}
+	dbSharedDir = sharedDir
+
 	duckdbinit.DefaultSettings = duckdbinit.Settings{
 		HomeDir:        dbHomeDir,
 		Threads:        dbThreads,
@@ -423,7 +441,11 @@ func main() {
 		SecretDir:      filepath.Join(dbHomeDir, "stored_secrets"),
 		TempDir:        filepath.Join(dbHomeDir, "tmp"),
 		MaxTempDirSize: dbMaxTempDirSize,
-		LockConfig:     dbLockConfig,
+
+		AllowedDirectories: []string{dbSharedDir},
+
+		DisableExternalAccess: !dbExternalAccess,
+		LockConfig:            dbLockConfig,
 	}
 	if dbInitQuery != "" {
 		q, err := stringOrReadFile(dbInitQuery, "db.initquery")

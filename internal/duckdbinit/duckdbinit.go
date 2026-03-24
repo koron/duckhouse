@@ -4,6 +4,7 @@ package duckdbinit
 import (
 	"context"
 	"database/sql"
+	"net/url"
 )
 
 type settingsKey struct{}
@@ -35,13 +36,20 @@ func initDB(ctx context.Context, db *sql.DB, initQueries []string) error {
 	}
 	// Finally, configure lock_configuration.
 	ex := &execContext{ctx: ctx, db: db}
-	set(ex, "lock_configuration", s.LockConfig)
+	if s.DisableExternalAccess {
+		setNoCheck(ex, "enable_external_access", false)
+	}
+	if s.LockConfig {
+		setNoCheck(ex, "lock_configuration", true)
+	}
 	return ex.err
 }
 
 func Open(ctx context.Context, initQueries ...string) (*sql.DB, error) {
 	s := GetSettings(ctx)
-	db, err := sql.Open("duckdb", "?home_directory="+s.HomeDir)
+	p := url.Values{}
+	p.Add("home_directory", s.HomeDir)
+	db, err := sql.Open("duckdb", "?"+p.Encode())
 	if err != nil {
 		return nil, err
 	}
@@ -62,12 +70,15 @@ type Settings struct {
 	TempDir        string
 	MaxTempDirSize string
 
-	LockConfig bool
+	AllowedDirectories []string
+
+	DisableExternalAccess bool
+	LockConfig            bool
 }
 
 // apply applies limits for the resources used by a DuckDB instance.
 func (s *Settings) apply(ctx context.Context, db *sql.DB) error {
-	// NOTE: home_directory show be specified in DSN
+	// NOTE: home_directory should be specified in DSN
 	ex := &execContext{ctx: ctx, db: db}
 	set(ex, "threads", s.Threads)
 	set(ex, "memory_limit", s.MemoryLimit)
@@ -75,6 +86,9 @@ func (s *Settings) apply(ctx context.Context, db *sql.DB) error {
 	set(ex, "secret_directory", s.SecretDir)
 	set(ex, "temp_directory", s.TempDir)
 	set(ex, "max_temp_directory_size", s.MaxTempDirSize)
+	if len(s.AllowedDirectories) > 0 {
+		setNoCheck(ex, "allowed_directories", s.AllowedDirectories)
+	}
 	return ex.err
 }
 
@@ -92,7 +106,15 @@ func set[T comparable](ex *execContext, name string, v T) {
 	if v == zero {
 		return
 	}
-	_, err := ex.db.ExecContext(ex.ctx, "SET "+name+" = ?", v)
+	_, err := ex.db.ExecContext(ex.ctx, "SET GLOBAL "+name+" = ?", v)
+	ex.err = err
+}
+
+func setNoCheck(ex *execContext, name string, v any) {
+	if ex.err != nil {
+		return
+	}
+	_, err := ex.db.ExecContext(ex.ctx, "SET GLOBAL "+name+" = ?", v)
 	ex.err = err
 }
 
