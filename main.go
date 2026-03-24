@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -39,6 +40,10 @@ var (
 
 	withoutAuthz    = false
 	globalInitQuery string
+
+	dbSettings    duckdbinit.Settings
+	dbSharedDir   string
+	dbPrivateRoot string
 )
 
 func readQuery(r *http.Request) (string, error) {
@@ -272,15 +277,65 @@ func handleInterruptQuery(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+func getPrivateDir(ctx context.Context, makeDir bool) (string, error) {
+	if dbPrivateRoot == "" {
+		return "", nil
+	}
+	connID, ok := conndb.GetID(ctx)
+	if !ok {
+		slog.Debug("connection ID cannot be determined")
+		return "", nil
+	}
+	privateDir := filepath.Join(dbPrivateRoot, connID.String())
+	if makeDir {
+		if err := os.MkdirAll(privateDir, 0777); err != nil {
+			return "", err
+		}
+	}
+	return privateDir, nil
+}
+
 func newDuckDB(ctx context.Context) (*sql.DB, error) {
-	initQueries := make([]string, 0, 2)
+	// Compose duckdbinit.Settings
+	settings := dbSettings
+	if dbSharedDir != "" {
+		if err := os.MkdirAll(dbSharedDir, 0777); err != nil {
+			return nil, err
+		}
+		settings.AllowedDirectories = append(settings.AllowedDirectories, dbSharedDir)
+	}
+	privateDir, err := getPrivateDir(ctx, true)
+	if err != nil {
+		return nil, err
+	}
+	if privateDir != "" {
+		settings.AllowedDirectories = append(settings.AllowedDirectories, privateDir)
+	}
+	// Prepare initQueries
+	initQueries := make([]string, 0, 4)
+	if dbSharedDir != "" {
+		initQueries = append(initQueries, fmt.Sprintf("CREATE MACRO public_dir(name) AS concat('%s', '/', name)", dbSharedDir))
+	}
+	if privateDir != "" {
+		initQueries = append(initQueries, fmt.Sprintf("CREATE MACRO private_dir(name) AS concat('%s', '/', name)", privateDir))
+	}
 	if globalInitQuery != "" {
 		initQueries = append(initQueries, globalInitQuery)
 	}
 	if entry, ok := authn.AuthnEntry(ctx); ok && entry.InitQuery != "" {
 		initQueries = append(initQueries, entry.InitQuery)
 	}
-	return duckdbinit.Open(ctx, initQueries...)
+	return duckdbinit.Open(ctx, settings, initQueries...)
+}
+
+func closeDuckDB(ctx context.Context, db *sql.DB) error {
+	privateDir, _ := getPrivateDir(ctx, false)
+	if privateDir != "" {
+		if err := os.RemoveAll(privateDir); err != nil {
+			slog.Warn("failed to remove private directory", "dir", privateDir, "error", err)
+		}
+	}
+	return db.Close()
 }
 
 func checkDB(ctx context.Context) error {
@@ -366,6 +421,7 @@ func main() {
 		dbHomeDir        string
 		dbMaxTempDirSize string
 		dbInitQuery      string
+		dbExternalAccess bool
 		dbLockConfig     bool
 	)
 
@@ -379,7 +435,8 @@ func main() {
 	flag.StringVar(&dbMemoryLimiit, "db.memorylimit", "1GiB", `initial value of DB "memory_limit"`)
 	flag.StringVar(&dbHomeDir, "db.homedir", filepath.Join(getwd(), ".duckdb"), `home dir for duckdb`)
 	flag.StringVar(&dbMaxTempDirSize, "db.maxtempdirsize", "10GiB", `max size of temporary dir`)
-	flag.BoolVar(&dbLockConfig, "db.lockconfig", true, `lock DB settings. to unlock use -db.lockconfig=false`)
+	flag.BoolVar(&dbExternalAccess, "db.externalaccess", false, `enable external access`)
+	flag.BoolVar(&dbLockConfig, "db.lockconfig", true, `lock DB settings. to unlock -db.lockconfig=false`)
 	flag.StringVar(&dbInitQuery, "db.initquery", "", `DB initialization query or file (prefixed with '@')`)
 	flag.Parse()
 
@@ -399,6 +456,7 @@ func main() {
 
 	conndb.SetMaxDB(maxDB)
 	conndb.SetOpener(conndb.OpenerFunc(newDuckDB))
+	conndb.SetCloser(conndb.CloserFunc(closeDuckDB))
 
 	if authnFile != "" {
 		err := authn.ReadFile(authnFile)
@@ -415,7 +473,21 @@ func main() {
 		withoutAuthz = true
 	}
 
-	duckdbinit.DefaultSettings = duckdbinit.Settings{
+	sharedDir, err := filepath.Abs(filepath.Join(dbHomeDir, "shared"))
+	if err != nil {
+		slog.Error("failed to determine shared directory", "error", err)
+		os.Exit(1)
+	}
+	dbSharedDir = sharedDir
+
+	privateRoot, err := filepath.Abs(filepath.Join(dbHomeDir, "private"))
+	if err != nil {
+		slog.Error("failed to determine private root", "error", err)
+		os.Exit(1)
+	}
+	dbPrivateRoot = privateRoot
+
+	dbSettings = duckdbinit.Settings{
 		HomeDir:        dbHomeDir,
 		Threads:        dbThreads,
 		MemoryLimit:    dbMemoryLimiit,
@@ -423,7 +495,9 @@ func main() {
 		SecretDir:      filepath.Join(dbHomeDir, "stored_secrets"),
 		TempDir:        filepath.Join(dbHomeDir, "tmp"),
 		MaxTempDirSize: dbMaxTempDirSize,
-		LockConfig:     dbLockConfig,
+
+		EnableExternalAccess: dbExternalAccess,
+		LockConfig:           dbLockConfig,
 	}
 	if dbInitQuery != "" {
 		q, err := stringOrReadFile(dbInitQuery, "db.initquery")

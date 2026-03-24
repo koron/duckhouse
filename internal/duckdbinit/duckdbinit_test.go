@@ -20,13 +20,13 @@ func testSetting[T any](t *testing.T, db *sql.DB, name string, want T) {
 	assert.Equal(t, want, got)
 }
 
-func TestDefaultSettings(t *testing.T) {
-	duckdbinit.DefaultSettings = duckdbinit.Settings{
+func TestSettings(t *testing.T) {
+	settings := duckdbinit.Settings{
 		Threads:     3,
 		MemoryLimit: "2GiB",
 		LockConfig:  true,
 	}
-	db, err := duckdbinit.Open(t.Context())
+	db, err := duckdbinit.Open(t.Context(), settings)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,11 +40,12 @@ func TestDefaultSettings(t *testing.T) {
 
 func TestLockConfig(t *testing.T) {
 	t.Run("true", func(t *testing.T) {
-		ctx := duckdbinit.WithSettings(t.Context(), duckdbinit.Settings{
+		ctx := t.Context()
+		settings := duckdbinit.Settings{
 			Threads:    1,
 			LockConfig: true,
-		})
-		db, err := duckdbinit.Open(ctx, "SET threads = 4")
+		}
+		db, err := duckdbinit.Open(ctx, settings, "SET threads = 4")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -62,11 +63,12 @@ func TestLockConfig(t *testing.T) {
 	})
 
 	t.Run("false", func(t *testing.T) {
-		ctx := duckdbinit.WithSettings(t.Context(), duckdbinit.Settings{
+		ctx := t.Context()
+		settings := duckdbinit.Settings{
 			Threads:    1,
 			LockConfig: false,
-		})
-		db, err := duckdbinit.Open(ctx, "SET threads = 4")
+		}
+		db, err := duckdbinit.Open(ctx, settings, "SET threads = 4")
 		if err != nil {
 			t.Fatal(err)
 		}
