@@ -184,6 +184,88 @@ $ curl 'http://127.0.0.1:9998/?f=table' -d "SELECT version() as VER"
         -   `Duckhouse-Authnid` - 認証ID
     -   ボディ: なし
 
+## 認証・認可機能
+
+起動時に `-authnfile {auth.json}` 引数を指定することで、認証情報を記録したJSONファイルを指定すると認証・認可機能が利用できます。
+認証・認可機能はクエリー実行とクエリーキャンセルを、 `Authorization` ヘッダーで認証・認可することで、保護します。
+`Authorization` ヘッダーに、JSONに記録された認証情報にマッチする `Basic` もしくは `Bearer` トークンを渡すことで、認証及び認可が成功します。
+この時、認証・認可に成功したIDがアクセスログの `authn_id` に記録されます。
+また同じIDがレスポンスの `Duckhouse-Authnid` にも記載されます。
+
+起動時に `-noauthz` 引数を指定すると、認証機能は有効化されますが認可機能は無効化されます。
+つまり `Authorization` ヘッダーが無い場合や、内容が認証所法にマッチしない場合でも、クエリーの実行やキャンセルが実行できます。
+その際には ID はアクセスログにも `Duckhouse-Authnid` にも記録されません。
+
+### 認証情報のJSONスキーマ
+
+-   ルート要素は認証情報オブジェクトの配列
+-   認証情報オブジェクトの中身
+    -   `id` - 認証情報のID。ログなどに記録される。ファイル内でユニークでなければならない。
+    -   `type` - `"basic"` (BASIC認証) もしくは `"bearer"` (APIトークン)の何れか
+    -   `user` - `type` が `"basic"` の時に必須なオブジェクト
+        -   `name` - ユーザー名
+        -   `password` - パスワード
+
+        認証には次の形式の `Authorization` ヘッダーが必要
+
+            `Authorization: basic {base64({name}:{password})}`
+
+    -   `token` - `type` が `"bearer"` の時に必須なトークン文字列
+
+        認証には次の形式の `Authorization` ヘッダーが必要
+
+            `Authorization: bearer {token}`
+
+    -   `init_query` - 初期化クエリーの文字列。
+        特定の認証を利用した際に、スレッド数やメモリ割り当ての上限を引き上げる目的で利用する。
+
+JSONのサンプルや cURL での使い方の例は <https://github.com/koron/duckhouse/issues/8> を参照してください。
+
+## ディレクトリ
+
+Duckhouse では共有ディレクトリとプライベートディレクトリを提供しています。
+
+### 共有ディレクトリ
+
+共有ディレクトリの内容はすべてのTCP接続間で共有します。
+そのためクエリの結果を保存し、再利用するのに向いています。
+共有ディレクトリのパスは関数 `public_dir(name)` で取得できます。
+以下は DuckDB の設定情報を共有ディレクトリのファイル settings.csv へ出力するコマンドの例です。
+
+```console
+$ curl http://127.0.0.1:9998/ -d "COPY (SELECT * FROM duckdb_settings()) TO (public_dir('settings.csv'))"
+Count
+150
+```
+
+共有ディレクトリの同名のファイルは常に上書きされるので、
+間違えて上書して古い内容を消してしまわないためには、
+適切な名前付けのルールが必要になります。
+
+### プライベートディレクトリ
+
+プライベートディレクトリは TCP 接続毎にユニークなディレクトリを提供するので、
+1接続で複数のクエリを投げる際に、中間結果をファイルへ出力し再利用する等の目的で利用できます。
+なおプライベートディレクトリは TCP 接続が失われる際に、その内容と一緒に自動的に破棄・削除されます。
+以下は DuckDB の設定情報をプライベートディレクトリのファイル settings.csv へ出力するコマンドの例です。
+
+```console
+$ curl http://127.0.0.1:9998/ -d "COPY (SELECT * FROM duckdb_settings()) TO (private_dir('settings.csv'))"
+Count
+150
+```
+
+### それ以外のディレクトリ
+
+Duckhouse はデフォルトでは `enable_external_access` を `false` に設定しています。
+また共有ディレクトリとプライベートディレクトリを `allowed_directories` に設定しています。
+そのため、この2つのディレクトリの外のファイルにアクセスすることはできません。
+
+ただしこの状態では副作用として HTTP や S3 で外部へアクセスすることもできなくなる制限が DuckDB にあります。
+`enable_external_access` を `true` にするには、起動時に `-db.externalaccess` オプションを指定してください。
+そうすると外部アクセスができるようになりますが、
+同時に共有ディレクトリとプライベートディレクトリの外へもアクセスできるようになります。
+
 ## Appendix
 
 ### Accesslog format
