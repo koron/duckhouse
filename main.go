@@ -452,7 +452,7 @@ func run() error {
 	)
 
 	flag.BoolVar(&debugFlag, "debug", false, `enable debug log`)
-	flag.IntVar(&maxDB, "maxdb", 4, `maximum number of DB instances`)
+	flag.IntVar(&maxDB, "maxdb", 20, `maximum number of DB instances`)
 	flag.StringVar(&addr, "addr", "localhost:9998", `address hosts HTTP server`)
 	flag.StringVar(&pidfileName, "pidfile", "", `file to record the process ID`)
 	flag.StringVar(&accessLogFormat, "accesslog.format", "text", `access log format: "text" or "json"`)
@@ -463,7 +463,7 @@ func run() error {
 	flag.StringVar(&dbMemoryLimiit, "db.memorylimit", "1GiB", `initial value of DB "memory_limit"`)
 	flag.StringVar(&dbHomeDir, "db.homedir", filepath.Join(getwd(), ".duckdb"), `home dir for duckdb`)
 	flag.StringVar(&dbMaxTempDirSize, "db.maxtempdirsize", "10GiB", `max size of temporary dir`)
-	flag.BoolVar(&dbExternalAccess, "db.externalaccess", false, `enable external access`)
+	flag.BoolVar(&dbExternalAccess, "db.externalaccess", true, `enable external access. to disable -db.externalaccess=false`)
 	flag.BoolVar(&dbLockConfig, "db.lockconfig", true, `lock DB settings. to unlock -db.lockconfig=false`)
 	flag.StringVar(&dbInitQuery, "db.initquery", "", `DB initialization query or file (prefixed with '@')`)
 	flag.StringVar(&uiResourceDir, "ui.resourcedir", "", `UI resource directory for development`)
