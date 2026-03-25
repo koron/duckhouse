@@ -11,17 +11,22 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/duckdb/duckdb-go/v2"
+	"github.com/koron-go/ctxsrv"
 	"github.com/koron/duckhouse/internal/accesslog"
 	"github.com/koron/duckhouse/internal/authn"
 	"github.com/koron/duckhouse/internal/conndb"
 	"github.com/koron/duckhouse/internal/duckdbinit"
 	"github.com/koron/duckhouse/internal/formatter"
 	"github.com/koron/duckhouse/internal/httperror"
+	"github.com/koron/duckhouse/internal/hupfile"
+	"github.com/koron/duckhouse/internal/pidfile"
 	"github.com/koron/duckhouse/internal/querydb"
 )
 
@@ -369,7 +374,7 @@ func newDuckhouseHandler(logger *slog.Logger) http.Handler {
 	return h
 }
 
-func run(addr string) error {
+func startServer(ctx context.Context, addr string) error {
 	err := checkDB(context.Background())
 	if err != nil {
 		return err
@@ -381,7 +386,7 @@ func run(addr string) error {
 		ConnState:   conndb.ConnState,
 	}
 	slog.Info("listening on", "addr", srv.Addr)
-	return srv.ListenAndServe()
+	return ctxsrv.HTTP(srv).WithShutdownTimeout(time.Minute).ServeWithContext(ctx)
 }
 
 func stringOrReadFile(s, purpose string) (string, error) {
@@ -392,7 +397,6 @@ func stringOrReadFile(s, purpose string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	slog.Debug("read file", "purpose", purpose, "name", s[1:])
 	return string(b), nil
 }
 
@@ -404,13 +408,15 @@ func getwd() string {
 	return wd
 }
 
-func main() {
+func run() error {
 	var (
 		debugFlag bool
 
 		maxDB int
 		addr  string
 
+		pidfileName     string
+		accessLogFile   string
 		accessLogFormat string
 
 		authnFile string
@@ -428,7 +434,9 @@ func main() {
 	flag.BoolVar(&debugFlag, "debug", false, `enable debug log`)
 	flag.IntVar(&maxDB, "maxdb", 4, `maximum number of DB instances`)
 	flag.StringVar(&addr, "addr", "localhost:9998", `address hosts HTTP server`)
+	flag.StringVar(&pidfileName, "pidfile", "", `file to record the process ID`)
 	flag.StringVar(&accessLogFormat, "accesslog.format", "text", `access log format: "text" or "json"`)
+	flag.StringVar(&accessLogFile, "accesslog.file", "", `access log file (default: stdout)`)
 	flag.StringVar(&authnFile, "authnfile", "", `authentication information file`)
 	flag.BoolVar(&noauthz, "noauthz", false, `executing queries etc. w/o authz`)
 	flag.IntVar(&dbThreads, "db.threads", 1, `initial value of DB "threads"`)
@@ -444,14 +452,29 @@ func main() {
 		slog.SetLogLoggerLevel(slog.LevelDebug)
 	}
 
+	if pidfileName != "" {
+		err := pidfile.Write(pidfileName)
+		if err != nil {
+			return fmt.Errorf("failed to write PID file: %w", err)
+		}
+		defer pidfile.Close()
+	}
+
+	var accessLogWriter io.Writer = os.Stdout
+	if accessLogFile != "" {
+		w, err := hupfile.New(accessLogFile)
+		if err != nil {
+			return fmt.Errorf("failed to open access log file: %w", err)
+		}
+		accessLogWriter = w
+	}
 	switch accessLogFormat {
 	case "text":
-		accessLogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
+		accessLogger = slog.New(slog.NewTextHandler(accessLogWriter, nil))
 	case "json":
-		accessLogger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
+		accessLogger = slog.New(slog.NewJSONHandler(accessLogWriter, nil))
 	default:
-		slog.Error("unsupported access log format", "format", accessLogFormat)
-		os.Exit(1)
+		return fmt.Errorf("unsupported access log format: %q", accessLogFormat)
 	}
 
 	conndb.SetMaxDB(maxDB)
@@ -461,29 +484,25 @@ func main() {
 	if authnFile != "" {
 		err := authn.ReadFile(authnFile)
 		if err != nil {
-			slog.Error("authnfile failure", "error", err)
-			os.Exit(1)
+			return fmt.Errorf("authnfile error: %w", err)
 		}
 	}
 	if noauthz {
 		if !authn.Enable() {
-			slog.Error("-noauthz needs to be used with -authnfile.")
-			os.Exit(1)
+			return errors.New("-noauthz need to be used with -authnfile")
 		}
 		withoutAuthz = true
 	}
 
 	sharedDir, err := filepath.Abs(filepath.Join(dbHomeDir, "shared"))
 	if err != nil {
-		slog.Error("failed to determine shared directory", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to determine shared directory: %w", err)
 	}
 	dbSharedDir = sharedDir
 
 	privateRoot, err := filepath.Abs(filepath.Join(dbHomeDir, "private"))
 	if err != nil {
-		slog.Error("failed to determine private root", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to determine private root: %w", err)
 	}
 	dbPrivateRoot = privateRoot
 
@@ -502,14 +521,23 @@ func main() {
 	if dbInitQuery != "" {
 		q, err := stringOrReadFile(dbInitQuery, "db.initquery")
 		if err != nil {
-			slog.Error("db.initquery failuare", "error", err)
-			os.Exit(1)
+			return fmt.Errorf("db.initquery failure: %w", err)
 		}
 		globalInitQuery = q
 	}
 
-	if err := run(addr); err != nil {
-		slog.Error("server terminated", "error", err)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	if err := startServer(ctx, addr); err != nil {
+		return fmt.Errorf("server terminated: %w", err)
+	}
+
+	return nil
+}
+
+func main() {
+	if err := run(); err != nil {
+		slog.Error("duckhouse terminated", "error", err)
 		os.Exit(1)
 	}
 }
