@@ -184,6 +184,10 @@ $ curl 'http://127.0.0.1:9998/?f=table' -d "SELECT version() as VER"
         -   `Duckhouse-Authnid` - 認証ID
     -   ボディ: なし
 
+### その他のパス
+
+-   `/ui/` - 簡素なクエリー用のUI
+
 ## 認証・認可機能
 
 起動時に `-authnfile {auth.json}` 引数を指定することで、認証情報を記録したJSONファイルを指定すると認証・認可機能が利用できます。
