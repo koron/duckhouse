@@ -54,6 +54,10 @@ var (
 	uiFS fs.FS
 )
 
+var (
+	ErrNoQuery = errors.New("no queries")
+)
+
 func readQuery(r *http.Request) (string, error) {
 	b, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -69,7 +73,7 @@ func readQuery(r *http.Request) (string, error) {
 	if s := q.Get("query"); s != "" {
 		return s, nil
 	}
-	return "", errors.New("no queries")
+	return "", ErrNoQuery
 }
 
 func parseFormat(r *http.Request) (format string, params map[string]string) {
@@ -163,6 +167,10 @@ func handleQuery(w http.ResponseWriter, r *http.Request) error {
 	}
 	query, err := readQuery(r)
 	if err != nil {
+		if r.Method == "GET" && errors.Is(err, ErrNoQuery) {
+			http.Redirect(w, r, "/ui/", http.StatusTemporaryRedirect)
+			return nil
+		}
 		return httperror.Newf(400, "No queries: %s", err)
 	}
 
@@ -372,6 +380,9 @@ func newDuckhouseHandler(logger *slog.Logger) http.Handler {
 	mux.Handle("GET /status/queries/{$}", errorAwareHandler(handleStatusQueries))
 	mux.Handle("DELETE /status/queries/{queryID}", errorAwareHandler(handleInterruptQuery))
 	mux.Handle("/ui/", http.StripPrefix("/ui/", http.FileServerFS(uiFS)))
+	if dbSharedDir != "" {
+		mux.Handle("/shared/", http.StripPrefix("/shared/", http.FileServerFS(os.DirFS(dbSharedDir))))
+	}
 	var h http.Handler = mux
 	h = accesslog.WrapHandler(logger, h)
 	h = authn.WrapHandler(h)
@@ -379,10 +390,13 @@ func newDuckhouseHandler(logger *slog.Logger) http.Handler {
 }
 
 func startServer(ctx context.Context, addr string) error {
+	// Preparement: check database configuration.
 	err := checkDB(context.Background())
 	if err != nil {
 		return err
 	}
+
+	// Start server
 	srv := &http.Server{
 		Addr:        addr,
 		Handler:     newDuckhouseHandler(accessLogger),
