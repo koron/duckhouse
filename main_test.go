@@ -233,7 +233,7 @@ func TestPing(t *testing.T) {
 
 func TestQueryDuckDBVersion(t *testing.T) {
 	ts := startServer0(t)
-	testQuery0(t, ts, `SELECT version() AS V`, "V\nv1.5.0\n")
+	testQuery0(t, ts, `SELECT version() AS V`, "V\nv1.5.1\n")
 }
 
 type TestConnStatus struct {
@@ -246,9 +246,9 @@ func TestStatusConnections(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		testQuery0(t, ts, `SELECT version() AS V`, "V\nv1.5.0\n")
+		testQuery0(t, ts, `SELECT version() AS V`, "V\nv1.5.1\n")
 		time.Sleep(200 * time.Millisecond)
-		testQuery0(t, ts, `SELECT version() AS V`, "V\nv1.5.0\n")
+		testQuery0(t, ts, `SELECT version() AS V`, "V\nv1.5.1\n")
 		wg.Done()
 	}()
 	time.Sleep(100 * time.Millisecond)
@@ -359,15 +359,15 @@ func TestAuthnQuery(t *testing.T) {
 	t.Run("authorized", func(t *testing.T) {
 		ts := startServer0(t)
 		setupAuthn(t, "testdata/authn.json", false)
-		testAuthorizedQuery(t, ts, `SELECT version() AS V`, "V\nv1.5.0\n", new("token1"), authorizationBearer("token-0123456789abcdef"))
-		testAuthorizedQuery(t, ts, `SELECT version() AS V`, "V\nv1.5.0\n", new("token2"), authorizationBearer("foobarbaz"))
-		testAuthorizedQuery(t, ts, `SELECT version() AS V`, "V\nv1.5.0\n", new("user1"), authorizationBasic("user1", "abcd1234"))
-		testAuthorizedQuery(t, ts, `SELECT version() AS V`, "V\nv1.5.0\n", new("user2"), authorizationBasic("user2", "xyz789"))
+		testAuthorizedQuery(t, ts, `SELECT version() AS V`, "V\nv1.5.1\n", new("token1"), authorizationBearer("token-0123456789abcdef"))
+		testAuthorizedQuery(t, ts, `SELECT version() AS V`, "V\nv1.5.1\n", new("token2"), authorizationBearer("foobarbaz"))
+		testAuthorizedQuery(t, ts, `SELECT version() AS V`, "V\nv1.5.1\n", new("user1"), authorizationBasic("user1", "abcd1234"))
+		testAuthorizedQuery(t, ts, `SELECT version() AS V`, "V\nv1.5.1\n", new("user2"), authorizationBasic("user2", "xyz789"))
 	})
 	t.Run("not authorized", func(t *testing.T) {
 		ts := startServer0(t)
 		setupAuthn(t, "testdata/authn.json", false)
-		testAuthorizedQuery(t, ts, `SELECT version() AS V`, "V\nv1.5.0\n", new("token1"), authorizationBearer("token-0123456789abcdef"))
+		testAuthorizedQuery(t, ts, `SELECT version() AS V`, "V\nv1.5.1\n", new("token1"), authorizationBearer("token-0123456789abcdef"))
 		// Should be failed without Authorization header
 		testUnauthorizedQuery(t, ts, `SELECT version() AS V`)
 		// Should be failed for with wrong Authorization header
@@ -376,8 +376,8 @@ func TestAuthnQuery(t *testing.T) {
 	t.Run("without authorization", func(t *testing.T) {
 		ts := startServer0(t)
 		setupAuthn(t, "testdata/authn.json", true)
-		testAuthorizedQuery(t, ts, `SELECT version() AS V`, "V\nv1.5.0\n", new("token1"), authorizationBearer("token-0123456789abcdef"))
-		testAuthorizedQuery(t, ts, `SELECT version() AS V`, "V\nv1.5.0\n", nil)
+		testAuthorizedQuery(t, ts, `SELECT version() AS V`, "V\nv1.5.1\n", new("token1"), authorizationBearer("token-0123456789abcdef"))
+		testAuthorizedQuery(t, ts, `SELECT version() AS V`, "V\nv1.5.1\n", nil)
 	})
 }
 
