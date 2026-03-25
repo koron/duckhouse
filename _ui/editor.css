@@ -1,0 +1,66 @@
+.container {
+  display: flex;
+
+  #query, #output, .flex-h {
+    flex: 1 1 auto;
+  }
+
+  > *:not(:first-child) {
+    margin-left: 0.5em;
+  }
+}
+
+.vpanel {
+  display: flex;
+  flex-direction: column;
+
+  > * {
+    padding: 1ex 1em;
+  }
+
+  > *:not(:first-child) {
+    margin-top: 1ex;
+  }
+}
+
+label {
+  user-select: none;
+}
+
+button {
+  padding: 1ex 1em;
+}
+
+kbd {
+  font-size: .95em;
+  border: 1px solid #666;
+  border-radius: 3px;
+  background-color: #eee;
+  display: inline-block;
+  padding: 2px 6px;
+}
+
+#output {
+  font-family: Consolas, monospace;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+#help {
+  float: right;
+  margin: 0.2em 0 0.2em 8px;
+  padding: 0.5em;
+  border: 2px solid #999;
+  border-radius: 0.5em;
+
+  > h2 {
+    margin: 0;
+    font-size: 1.2em;
+  }
+  > div {
+    padding-left: 0.5em;
+  }
+  a {
+    color: inherit;
+  }
+}

@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -49,6 +50,12 @@ var (
 	dbSettings    duckdbinit.Settings
 	dbSharedDir   string
 	dbPrivateRoot string
+
+	uiFS fs.FS
+)
+
+var (
+	ErrNoQuery = errors.New("no queries")
 )
 
 func readQuery(r *http.Request) (string, error) {
@@ -66,7 +73,7 @@ func readQuery(r *http.Request) (string, error) {
 	if s := q.Get("query"); s != "" {
 		return s, nil
 	}
-	return "", errors.New("no queries")
+	return "", ErrNoQuery
 }
 
 func parseFormat(r *http.Request) (format string, params map[string]string) {
@@ -160,6 +167,10 @@ func handleQuery(w http.ResponseWriter, r *http.Request) error {
 	}
 	query, err := readQuery(r)
 	if err != nil {
+		if r.Method == "GET" && errors.Is(err, ErrNoQuery) {
+			http.Redirect(w, r, "/ui/", http.StatusTemporaryRedirect)
+			return nil
+		}
 		return httperror.Newf(400, "No queries: %s", err)
 	}
 
@@ -368,6 +379,10 @@ func newDuckhouseHandler(logger *slog.Logger) http.Handler {
 	mux.Handle("GET /status/connections/{$}", errorAwareHandler(handleStatusConnections))
 	mux.Handle("GET /status/queries/{$}", errorAwareHandler(handleStatusQueries))
 	mux.Handle("DELETE /status/queries/{queryID}", errorAwareHandler(handleInterruptQuery))
+	mux.Handle("/ui/", http.StripPrefix("/ui/", http.FileServerFS(uiFS)))
+	if dbSharedDir != "" {
+		mux.Handle("/shared/", http.StripPrefix("/shared/", http.FileServerFS(os.DirFS(dbSharedDir))))
+	}
 	var h http.Handler = mux
 	h = accesslog.WrapHandler(logger, h)
 	h = authn.WrapHandler(h)
@@ -375,10 +390,13 @@ func newDuckhouseHandler(logger *slog.Logger) http.Handler {
 }
 
 func startServer(ctx context.Context, addr string) error {
+	// Preparement: check database configuration.
 	err := checkDB(context.Background())
 	if err != nil {
 		return err
 	}
+
+	// Start server
 	srv := &http.Server{
 		Addr:        addr,
 		Handler:     newDuckhouseHandler(accessLogger),
@@ -429,6 +447,8 @@ func run() error {
 		dbInitQuery      string
 		dbExternalAccess bool
 		dbLockConfig     bool
+
+		uiResourceDir string
 	)
 
 	flag.BoolVar(&debugFlag, "debug", false, `enable debug log`)
@@ -446,6 +466,7 @@ func run() error {
 	flag.BoolVar(&dbExternalAccess, "db.externalaccess", false, `enable external access`)
 	flag.BoolVar(&dbLockConfig, "db.lockconfig", true, `lock DB settings. to unlock -db.lockconfig=false`)
 	flag.StringVar(&dbInitQuery, "db.initquery", "", `DB initialization query or file (prefixed with '@')`)
+	flag.StringVar(&uiResourceDir, "ui.resourcedir", "", `UI resource directory for development`)
 	flag.Parse()
 
 	if debugFlag {
@@ -476,6 +497,12 @@ func run() error {
 	default:
 		return fmt.Errorf("unsupported access log format: %q", accessLogFormat)
 	}
+
+	fs, err := getUIFS(uiResourceDir)
+	if err != nil {
+		return fmt.Errorf("UI resource failure: %w", err)
+	}
+	uiFS = fs
 
 	conndb.SetMaxDB(maxDB)
 	conndb.SetOpener(conndb.OpenerFunc(newDuckDB))

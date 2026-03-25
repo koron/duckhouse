@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+
+<meta charset="UTF-8">
+<meta name="referrer" content="no-referrer">
+
+<link rel="stylesheet" type="text/css" href="editor.css">
+
+<h1>Duckhouse UI</h1>
+
+<section id="help">
+  <h2>Quick help</h2>
+  <div><kbd>Ctrl</kbd>+<kbd>Enter</kbd>: Query</div>
+</section>
+
+<section class="container">
+  <textarea id="query" rows="10"></textarea>
+  <div class="vpanel">
+    <button id="format">Format</button>
+    <button id="minify">Minify</button>
+    <button id="submit">Query</button>
+  </div>
+
+</section>
+
+<h3>Options</h3>
+<section class="container">
+  <div class="flex-h">
+    <div>
+      <label for="opt_format">Format</label>
+      <select id="opt_format">
+        <option>CSV</option>
+        <option>HTML</option>
+        <option>Markdown</option>
+        <option selected>table</option>
+      </select>
+    </div>
+  </div>
+</section>
+
+
+<section>
+  <h2>Output</h2>
+  <section class="container">
+    <textarea id="output" rows="25" readonly></textarea>
+  </section>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/sql-formatter@15.7.2/dist/sql-formatter.min.js"></script>
+<script src="./editor.js"></script>
