@@ -20,14 +20,14 @@ import (
 
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/koron-go/ctxsrv"
+	"github.com/koron-go/daemonic/hupfile"
+	"github.com/koron-go/daemonic/pidfile"
 	"github.com/koron/duckhouse/internal/accesslog"
 	"github.com/koron/duckhouse/internal/authn"
 	"github.com/koron/duckhouse/internal/conndb"
 	"github.com/koron/duckhouse/internal/duckdbinit"
 	"github.com/koron/duckhouse/internal/formatter"
 	"github.com/koron/duckhouse/internal/httperror"
-	"github.com/koron/duckhouse/internal/hupfile"
-	"github.com/koron/duckhouse/internal/pidfile"
 	"github.com/koron/duckhouse/internal/querydb"
 )
 

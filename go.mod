@@ -7,6 +7,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/hamba/avro/v2 v2.31.0
 	github.com/koron-go/ctxsrv v1.0.2
+	github.com/koron-go/daemonic v0.0.1
 	github.com/olekukonko/tablewriter v1.1.3
 )
 

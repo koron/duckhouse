@@ -55,6 +55,8 @@ github.com/klauspost/cpuid/v2 v2.3.0 h1:S4CRMLnYUhGeDFDqkGriYKdfoFlDnMtqTiI/sFzh
 github.com/klauspost/cpuid/v2 v2.3.0/go.mod h1:hqwkgyIinND0mEev00jJYCxPNVRVXFQeu1XKlok6oO0=
 github.com/koron-go/ctxsrv v1.0.2 h1:bPgRP181I+987x7OA3LVqhEjaaJJ/yN/oofmdm7uuzM=
 github.com/koron-go/ctxsrv v1.0.2/go.mod h1:JCpnysh/b7EGePGkdVsFl8GJopf2w2YsIS822K0XTx0=
+github.com/koron-go/daemonic v0.0.1 h1:MtmdyFlP4I8ii382MK91NVzUUufgX8b8U7/XZ6k4YbU=
+github.com/koron-go/daemonic v0.0.1/go.mod h1:CmCrjO9f/usyYyxcLuKNXt5FbGQHI1ZcdxQWncwGP7I=
 github.com/mattn/go-colorable v0.1.14 h1:9A9LHSqF/7dyVVX6g0U9cwm9pG3kP9gSzcuIPHPsaIE=
 github.com/mattn/go-colorable v0.1.14/go.mod h1:6LmQG8QLFO4G5z1gPvYEzlUgJ2wF+stgPZH1UqBm1s8=
 github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWEY=
