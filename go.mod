@@ -9,6 +9,7 @@ require (
 	github.com/koron-go/ctxsrv v1.0.2
 	github.com/koron-go/daemonic v0.0.1
 	github.com/olekukonko/tablewriter v1.1.3
+	golang.org/x/net v0.52.0
 )
 
 require (
@@ -44,7 +45,7 @@ require (
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
 	golang.org/x/mod v0.32.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/sys v0.40.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/telemetry v0.0.0-20260116145544-c6413dc483f5 // indirect
 	golang.org/x/tools v0.41.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect

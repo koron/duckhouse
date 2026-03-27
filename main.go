@@ -26,6 +26,7 @@ import (
 	"github.com/koron/duckhouse/internal/authn"
 	"github.com/koron/duckhouse/internal/conndb"
 	"github.com/koron/duckhouse/internal/duckdbinit"
+	"github.com/koron/duckhouse/internal/fileserver"
 	"github.com/koron/duckhouse/internal/formatter"
 	"github.com/koron/duckhouse/internal/httperror"
 	"github.com/koron/duckhouse/internal/querydb"
@@ -381,7 +382,7 @@ func newDuckhouseHandler(logger *slog.Logger) http.Handler {
 	mux.Handle("DELETE /status/queries/{queryID}", errorAwareHandler(handleInterruptQuery))
 	mux.Handle("/ui/", http.StripPrefix("/ui/", http.FileServerFS(uiFS)))
 	if dbSharedDir != "" {
-		mux.Handle("/shared/", http.StripPrefix("/shared/", http.FileServerFS(os.DirFS(dbSharedDir))))
+		mux.Handle("/shared/", http.StripPrefix("/shared/", fileserver.New(dbSharedDir)))
 	}
 	var h http.Handler = mux
 	h = accesslog.WrapHandler(logger, h)
