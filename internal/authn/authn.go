@@ -25,12 +25,12 @@ func Enable() bool {
 	return Default != nil
 }
 
-func extractEntry(r *http.Request) *Entry {
-	if Default == nil {
+func extractEntry(a *Authenticator, r *http.Request) *Entry {
+	if a == nil {
 		return nil
 	}
 	s := r.Header.Get("Authorization")
-	return Default.index[s]
+	return a.index[s]
 }
 
 type entryKey struct{}
@@ -43,7 +43,7 @@ func withEntry(ctx context.Context, entry *Entry) context.Context {
 func WrapHandler(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Embed authenticity information to request context.
-		entry := extractEntry(r)
+		entry := extractEntry(Default, r)
 		if entry != nil {
 			ctx := withEntry(r.Context(), entry)
 			r = r.WithContext(ctx)
@@ -109,22 +109,27 @@ var (
 )
 
 func ReadFile(name string) error {
-	f, err := os.Open(name)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	a, err := readAuthenticator(f)
-	if err != nil {
-		return err
-	}
-	Default = a
-	return nil
+	var err error
+	Default, err = LoadFile(name)
+	return err
 }
 
 type Authenticator struct {
 	entries []Entry
 	index   map[string]*Entry
+}
+
+func LoadFile(name string) (*Authenticator, error) {
+	f, err := os.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	a, err := readAuthenticator(f)
+	if err != nil {
+		return nil, err
+	}
+	return a, nil
 }
 
 func readAuthenticator(r io.Reader) (*Authenticator, error) {
@@ -160,4 +165,16 @@ func readAuthenticator(r io.Reader) (*Authenticator, error) {
 		entries: entries,
 		index:   index,
 	}, nil
+}
+
+func (a *Authenticator) AuthenticateHandler(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Embed authenticity information to request context.
+		entry := extractEntry(a, r)
+		if entry != nil {
+			ctx := withEntry(r.Context(), entry)
+			r = r.WithContext(ctx)
+		}
+		h.ServeHTTP(w, r)
+	})
 }
