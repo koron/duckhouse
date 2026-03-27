@@ -189,26 +189,6 @@ $ curl 'http://127.0.0.1:9998/?f=table' -d "SELECT version() as VER"
 -   `/ui/` - 簡素なクエリー用のUI
 -   `/shared/` - 共有ディレクトリの内容
 
-    本ディレクトリは [WebDAV][webdav] を実装している。
-    そのためディレクトリの作成、新規ファイルのアップロード、
-    ファイル及びディレクトリの削除が可能となっている。
-
-    具体的な方法は以下のコマンド例を参照
-
-    ```sh
-    # ディレクトリの作成 (MKCOL メソッド)
-    curl -X MKCOL http://127.0.0.1:9998/shared/newdir
-
-    # 新規ファイルのアップロード
-    curl -X PUT http://127.0.0.1:9998/shared/hello.txt -d "Hello World"
-
-    # ディレクトリ・ファイルの削除
-    curl -X DELETE http://127.0.0.1:9998/shared/delete_target
-    ```
-
-[webdav]:https://ja.wikipedia.org/wiki/WebDAV
-
-
 ## 認証・認可機能
 
 起動時に `-authnfile {auth.json}` 引数を指定することで、認証情報を記録したJSONファイルを指定すると認証・認可機能が利用できます。
@@ -266,6 +246,34 @@ Count
 共有ディレクトリの同名のファイルは常に上書きされるので、
 間違えて上書して古い内容を消してしまわないためには、
 適切な名前付けのルールが必要になります。
+
+#### ブラウジング
+
+共有ディレクトリはHTTPブラウザやクライアントから
+`/shared/` にアクセスすることで内容を確認できます。
+`/shared/` は単なるHTTPファイルサーバーだけではなく
+[WebDAV][webdav] を実装している。
+そのため WebDAV クライアントや cURL を用いて
+ディレクトリの作成、新規ファイルのアップロード、
+ファイル及びディレクトリの削除が可能となっている。
+
+WebDAVによる捜査の具体的な方法は以下のコマンド例を参照:
+
+```sh
+# ディレクトリの作成 (MKCOL メソッド)
+curl -X MKCOL http://127.0.0.1:9998/shared/newdir
+
+# 新規ファイルのアップロード
+curl -X PUT http://127.0.0.1:9998/shared/hello.txt -d "Hello World"
+
+# ディレクトリ・ファイルの削除
+curl -X DELETE http://127.0.0.1:9998/shared/delete_target
+```
+
+WebDAV 固有のディレクトリに変更を伴う機能は認証・認可の対象となっている。
+
+[webdav]:https://ja.wikipedia.org/wiki/WebDAV
+
 
 ### プライベートディレクトリ
 
