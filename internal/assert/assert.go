@@ -28,6 +28,19 @@ func IsRegularFile(t *testing.T, name string) {
 	}
 }
 
+func IsDir(t *testing.T, name string) {
+	t.Helper()
+	fi, err := os.Stat(name)
+	if err != nil {
+		t.Errorf("failed to stat: %s", err)
+		return
+	}
+	if !fi.Mode().IsDir() {
+		t.Errorf("not regular file: %s", name)
+		return
+	}
+}
+
 func IsNotExist(t *testing.T, name string) {
 	t.Helper()
 	_, err := os.Stat(name)
@@ -39,4 +52,13 @@ func IsNotExist(t *testing.T, name string) {
 		t.Errorf("unexpected error, want fs.ErrNotExist: got=%s", err)
 		return
 	}
+}
+
+func ReadFile(t *testing.T, name, wantContents string) {
+	t.Helper()
+	b, err := os.ReadFile(name)
+	if err != nil {
+		t.Errorf("read file failed: %s", err)
+	}
+	Equal(t, wantContents, string(b))
 }

@@ -26,6 +26,7 @@ import (
 	"github.com/koron/duckhouse/internal/authn"
 	"github.com/koron/duckhouse/internal/conndb"
 	"github.com/koron/duckhouse/internal/duckdbinit"
+	"github.com/koron/duckhouse/internal/fileserver"
 	"github.com/koron/duckhouse/internal/formatter"
 	"github.com/koron/duckhouse/internal/httperror"
 	"github.com/koron/duckhouse/internal/querydb"
@@ -372,6 +373,23 @@ func errorAwareHandler(handle func(http.ResponseWriter, *http.Request) error) ht
 	})
 }
 
+func authzChangeOperationHanlder(handle http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET", "HEAD", "OPTIONS", "PROPFIND":
+			// no authz
+		default:
+			// Under authz control
+			err := checkAuthz(w, r)
+			if err != nil {
+				httperror.Write(w, err)
+				return
+			}
+		}
+		handle.ServeHTTP(w, r)
+	})
+}
+
 func newDuckhouseHandler(logger *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/{$}", errorAwareHandler(handleQuery))
@@ -381,7 +399,8 @@ func newDuckhouseHandler(logger *slog.Logger) http.Handler {
 	mux.Handle("DELETE /status/queries/{queryID}", errorAwareHandler(handleInterruptQuery))
 	mux.Handle("/ui/", http.StripPrefix("/ui/", http.FileServerFS(uiFS)))
 	if dbSharedDir != "" {
-		mux.Handle("/shared/", http.StripPrefix("/shared/", http.FileServerFS(os.DirFS(dbSharedDir))))
+		h := authzChangeOperationHanlder(fileserver.New(dbSharedDir))
+		mux.Handle("/shared/", http.StripPrefix("/shared/", h))
 	}
 	var h http.Handler = mux
 	h = accesslog.WrapHandler(logger, h)
