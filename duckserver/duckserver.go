@@ -4,18 +4,23 @@ package duckserver
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
+	"github.com/duckdb/duckdb-go/v2"
 	"github.com/koron-go/ctxsrv"
 	"github.com/koron-go/daemonic/hupfile"
 	"github.com/koron-go/daemonic/pidfile"
@@ -24,7 +29,9 @@ import (
 	"github.com/koron/duckhouse/internal/conndb"
 	"github.com/koron/duckhouse/internal/duckdbinit"
 	"github.com/koron/duckhouse/internal/fileserver"
+	"github.com/koron/duckhouse/internal/formatter"
 	"github.com/koron/duckhouse/internal/httperror"
+	"github.com/koron/duckhouse/internal/querydb"
 )
 
 const (
@@ -35,11 +42,15 @@ const (
 	defaultFormat = "csv"
 )
 
+var (
+	ErrNoQuery = errors.New("no queries")
+)
+
 type Config struct {
 	EnableDebugLog bool
 
-	MaxDB   int
 	Address string
+	MaxDB   int
 
 	PIDFile         string
 	AccessLogFile   string
@@ -48,15 +59,15 @@ type Config struct {
 	AuthnFile string
 	NoAuthz   bool
 
-	DBThreads        int
-	DBMemoryLimiit   string
 	DBHomeDir        string
+	DBThreads        int
+	DBMemoryLimit    string
 	DBMaxTempDirSize string
 	DBExternalAccess bool
 	DBLockConfig     bool
 	DBInitQuery      string
 
-	UIResourceDir string
+	UIResourceFS fs.FS
 }
 
 func getwd() string {
@@ -69,12 +80,12 @@ func getwd() string {
 
 func DefaultConfig() Config {
 	return Config{
-		MaxDB:            20,
 		Address:          "localhost:9998",
+		MaxDB:            20,
 		AccessLogFormat:  "text",
-		DBThreads:        1,
-		DBMemoryLimiit:   "1GiB",
 		DBHomeDir:        filepath.Join(getwd(), ".duckhouse"),
+		DBThreads:        1,
+		DBMemoryLimit:    "1GiB",
 		DBMaxTempDirSize: "10GiB",
 		DBExternalAccess: true,
 		DBLockConfig:     true,
@@ -98,7 +109,15 @@ type Server struct {
 	dbSettings    duckdbinit.Settings
 	dbInitQuery   string
 
-	connManager *conndb.Manager
+	connManager   *conndb.Manager
+	queryDatabase querydb.Database
+
+	uiFS fs.FS
+
+	startedMu   sync.Mutex
+	startedCond *sync.Cond
+
+	URL string
 }
 
 func New(c Config) (*Server, error) {
@@ -116,7 +135,7 @@ func New(c Config) (*Server, error) {
 		dbSettings: duckdbinit.Settings{
 			HomeDir:              homedir,
 			Threads:              c.DBThreads,
-			MemoryLimit:          c.DBMemoryLimiit,
+			MemoryLimit:          c.DBMemoryLimit,
 			ExtensionDir:         filepath.Join(homedir, "extensions"),
 			SecretDir:            filepath.Join(homedir, "stored_secrets"),
 			TempDir:              filepath.Join(homedir, "tmp"),
@@ -125,6 +144,7 @@ func New(c Config) (*Server, error) {
 			LockConfig:           c.DBLockConfig,
 		},
 		dbInitQuery: c.DBInitQuery,
+		uiFS:        c.UIResourceFS,
 	}
 
 	srv.logger = slog.Default()
@@ -137,8 +157,6 @@ func New(c Config) (*Server, error) {
 		return nil, err
 	}
 	srv.accessLogFormat = lf
-
-	// TODO: UIResourceDir
 
 	if c.AuthnFile != "" {
 		a, err := authn.LoadFile(c.AuthnFile)
@@ -174,6 +192,8 @@ func New(c Config) (*Server, error) {
 		Closer: conndb.CloserFunc(srv.closeDuckDB),
 	}
 
+	srv.startedCond = sync.NewCond(&srv.startedMu)
+
 	return &srv, nil
 }
 
@@ -195,14 +215,13 @@ func parseLogFormat(s string) (logFormat, error) {
 	}
 }
 
-func (srv *Server) Serve(ctx context.Context) error {
-	// Preparement: check database configuration.
-	err := srv.checkDB(ctx)
-	if err != nil {
-		return err
+// Setup access logger
+func (srv *Server) setupAccessLogger() error {
+	// Special setting to discard access logs during testing
+	if srv.accessLogFile == "test.discard" {
+		return nil
 	}
 
-	// Setup access logger
 	var logw io.Writer = os.Stdout
 	if srv.accessLogFile != "" {
 		w, err := hupfile.New(srv.accessLogFile)
@@ -212,13 +231,23 @@ func (srv *Server) Serve(ctx context.Context) error {
 		logw = w
 		defer w.Close()
 	}
+
 	switch srv.accessLogFormat {
-	default:
-		fallthrough
 	case textLog:
 		srv.accessLogger = slog.New(slog.NewTextHandler(logw, nil))
 	case jsonLog:
 		srv.accessLogger = slog.New(slog.NewJSONHandler(logw, nil))
+	default:
+		return errors.New("invalid access log format")
+	}
+	return nil
+}
+
+func (srv *Server) Serve(ctx context.Context) error {
+	// Preparement: check database configuration.
+	err := srv.checkDB(ctx)
+	if err != nil {
+		return err
 	}
 
 	// Set PID file
@@ -230,17 +259,47 @@ func (srv *Server) Serve(ctx context.Context) error {
 		defer pidfile.Close()
 	}
 
-	// Start server
+	if err := srv.setupAccessLogger(); err != nil {
+		return err
+	}
+
+	srvctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
 	httpsrv := &http.Server{
 		Addr:        srv.address,
 		Handler:     srv.newDuckhouseHandler(),
 		ConnContext: srv.connManager.ConnContext,
 		ConnState:   srv.connManager.ConnState,
+		BaseContext: func(ln net.Listener) context.Context {
+			srv.startedCond.L.Lock()
+			addr := ln.Addr()
+			srv.logger.Info("listening on", "addr", addr)
+			srv.URL = "http://" + addr.String()
+			srv.startedCond.Broadcast()
+			srv.startedCond.L.Unlock()
+			return context.Background()
+		},
 	}
-	srvctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-	srv.logger.Info("listening on", "addr", httpsrv.Addr)
+
+	// Start server
 	return ctxsrv.HTTP(httpsrv).WithShutdownTimeout(time.Minute).ServeWithContext(srvctx)
+}
+
+func (srv *Server) WaitServe() {
+	srv.startedCond.L.Lock()
+	for srv.URL == "" {
+		srv.startedCond.Wait()
+	}
+	srv.startedCond.L.Unlock()
+}
+
+func (srv *Server) SharedDir() string {
+	return srv.dbSharedDir
+}
+
+func (srv *Server) PrivateRoot() string {
+	return srv.dbPrivateRoot
 }
 
 func (srv *Server) checkDB(ctx context.Context) error {
@@ -314,22 +373,26 @@ func (srv *Server) getPrivateDir(ctx context.Context, makeDir bool) (string, err
 }
 
 func (srv *Server) newDuckhouseHandler() http.Handler {
+	// Define handlers
 	mux := http.NewServeMux()
-	// TODO: implement me.
-	//mux.Handle("/{$}", errorAwareHandler(handleQuery))
+	mux.Handle("/{$}", errorAwareHandler(srv.handleQuery))
 	mux.Handle("GET /ping/{$}", errorAwareHandler(srv.handlePing))
-	//mux.Handle("GET /status/connections/{$}", errorAwareHandler(handleStatusConnections))
-	//mux.Handle("GET /status/queries/{$}", errorAwareHandler(handleStatusQueries))
-	//mux.Handle("DELETE /status/queries/{queryID}", errorAwareHandler(handleInterruptQuery))
-	//mux.Handle("/ui/", http.StripPrefix("/ui/", http.FileServerFS(uiFS)))
+	mux.Handle("GET /status/connections/{$}", errorAwareHandler(srv.handleStatusConnections))
+	mux.Handle("GET /status/queries/{$}", errorAwareHandler(srv.handleStatusQueries))
+	mux.Handle("DELETE /status/queries/{queryID}", errorAwareHandler(srv.handleInterruptQuery))
 	if srv.dbSharedDir != "" {
 		h := srv.authzChangeOperationHanlder(fileserver.New(srv.dbSharedDir))
 		mux.Handle("/shared/", http.StripPrefix("/shared/", h))
 	}
+	if srv.uiFS != nil {
+		mux.Handle("/ui/", http.StripPrefix("/ui/", http.FileServerFS(srv.uiFS)))
+	}
 
 	// Install middlewares.
 	var h http.Handler = mux
-	h = accesslog.WrapHandler(srv.accessLogger, h)
+	if srv.accessLogger != nil {
+		h = accesslog.WrapHandler(srv.accessLogger, h)
+	}
 	h = srv.authenticator.AuthenticateHandler(h)
 	return h
 }
@@ -378,5 +441,219 @@ func (srv *Server) authzChangeOperationHanlder(handle http.Handler) http.Handler
 func (srv *Server) handlePing(w http.ResponseWriter, r *http.Request) error {
 	w.WriteHeader(200)
 	w.Write([]byte("OK\r\n"))
+	return nil
+}
+
+func (srv *Server) handleQuery(w http.ResponseWriter, r *http.Request) error {
+	if err := srv.checkAuthz(w, r); err != nil {
+		return err
+	}
+	if r.Method != "GET" && r.Method != "POST" {
+		return httperror.New(404)
+	}
+	query, err := readQuery(r)
+	if err != nil {
+		if r.Method == "GET" && errors.Is(err, ErrNoQuery) && srv.uiFS != nil {
+			http.Redirect(w, r, "/ui/", http.StatusTemporaryRedirect)
+			return nil
+		}
+		return httperror.Newf(400, "No queries: %s", err)
+	}
+
+	// determine format from the request
+	format, params := parseFormat(r)
+	slog.Debug("parsed format", "format", format, "params", params)
+	factory, ok := formatter.Find(format)
+	if !ok {
+		return httperror.Newf(400, "Unsupported format: %s", format)
+	}
+	fw, err := factory.Create(w, params)
+	if err != nil {
+		return httperror.Newf(400, "Invalid parameters for the format: %s params=%+v", format, params)
+	}
+
+	// Determine database
+	db, connid, err := srv.connManager.GetDB(r.Context())
+	if connid != 0 {
+		w.Header().Set(ConnectionIDHeader, connid.String())
+	}
+	if err != nil {
+		if errors.Is(err, conndb.ErrMaxDB) {
+			return httperror.Newf(429, err.Error())
+		}
+		return httperror.Newf(500, "No associated DB: %s", err)
+	}
+
+	// Register an executing query, and defer unregister it.
+	q := srv.queryDatabase.Add(r.Context(), connid, query)
+	defer q.Close()
+
+	// Execute a query
+	rows, err := db.QueryContext(q.Context(), query)
+	dur := time.Since(q.Start)
+	if r, ok := w.(accesslog.QueryReporter); ok {
+		r.QueryReport(query, dur)
+	}
+	w.Header().Set(DurationHeader, dur.String())
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return httperror.Newf(504, err.Error())
+		}
+		if _, ok := err.(*duckdb.Error); !ok {
+			return httperror.Newf(500, "DB error: %s", err)
+		}
+		return httperror.Newf(400, "Query error: %s", err)
+	}
+	defer rows.Close()
+
+	// Write the response body
+	w.Header().Set("Content-Type", factory.ContentType())
+	w.WriteHeader(200)
+	err = writeRows(q.Context(), fw, rows)
+	if err != nil {
+		return httperror.Newf(500, "Serialization error: %s", err)
+	}
+	return nil
+}
+
+func readQuery(r *http.Request) (string, error) {
+	b, err := io.ReadAll(r.Body)
+	if err != nil {
+		return "", err
+	}
+	if len(b) > 0 {
+		return string(b), nil
+	}
+	q := r.URL.Query()
+	if s := q.Get("q"); s != "" {
+		return s, nil
+	}
+	if s := q.Get("query"); s != "" {
+		return s, nil
+	}
+	return "", ErrNoQuery
+}
+
+func parseFormat(r *http.Request) (format string, params map[string]string) {
+	q := r.URL.Query()
+	format = q.Get("format")
+	if format == "" {
+		format = q.Get("f")
+	}
+	parts := strings.Split(format, ",")
+	if parts[0] == "" {
+		parts[0] = defaultFormat
+	}
+	// Parse parameters
+	params = map[string]string{}
+	for _, s := range parts[1:] {
+		p := strings.SplitN(s, ":", 2)
+		if p[0] == "" {
+			continue
+		}
+		if len(p) == 1 {
+			params[p[0]] = ""
+			continue
+		}
+		params[p[0]] = p[1]
+	}
+	return parts[0], params
+}
+
+func writeRows(ctx context.Context, fw formatter.Writer, rows *sql.Rows) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Write the header
+	columnTypes, err := rows.ColumnTypes()
+	if err != nil {
+		return err
+	}
+	err = fw.WriteHeader(columnTypes)
+	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Prepare for scan
+	receivers := make([]any, len(columnTypes))
+	values := make([]any, len(columnTypes))
+	for i := range receivers {
+		receivers[i] = new(any)
+	}
+	for rows.Next() {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		err := rows.Scan(receivers...)
+		if err != nil {
+			return err
+		}
+		for i, pv := range receivers {
+			values[i] = *pv.(*any)
+		}
+		err = fw.WriteBody(values)
+		if err != nil {
+			return err
+		}
+	}
+	return fw.Flush()
+}
+
+type ConnectionStatus struct {
+	ID      string      `json:"ID"`
+	DBStats sql.DBStats `json:"DBStats"`
+}
+
+func (srv *Server) handleStatusConnections(w http.ResponseWriter, r *http.Request) error {
+	w.Header().Set("Content-Type", "application/jsonlines")
+	w.WriteHeader(200)
+	enc := json.NewEncoder(w)
+	for id, db := range srv.connManager.Databases() {
+		s := ConnectionStatus{
+			ID:      id.String(),
+			DBStats: db.Stats(),
+		}
+		if err := enc.Encode(s); err != nil {
+			return err
+		}
+		if _, err := w.Write([]byte("\n")); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (srv *Server) handleStatusQueries(w http.ResponseWriter, r *http.Request) error {
+	w.Header().Set("Content-Type", "application/jsonlines")
+	w.WriteHeader(200)
+	now := time.Now()
+	enc := json.NewEncoder(w)
+	for _, q := range srv.queryDatabase.Queries() {
+		if err := enc.Encode(q.Stats(now)); err != nil {
+			return err
+		}
+		if _, err := w.Write([]byte("\n")); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (srv *Server) handleInterruptQuery(w http.ResponseWriter, r *http.Request) error {
+	if err := srv.checkAuthz(w, r); err != nil {
+		return err
+	}
+	id, err := querydb.ParseID(r.PathValue("queryID"))
+	if err != nil {
+		return httperror.Newf(400, "ID syntax error: %s", err)
+	}
+	q, ok := srv.queryDatabase.Query(id)
+	if !ok {
+		return httperror.New(404)
+	}
+	q.Close()
+	w.WriteHeader(204)
 	return nil
 }
