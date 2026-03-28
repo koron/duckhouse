@@ -10,12 +10,16 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/koron-go/ctxsrv"
 	"github.com/koron-go/daemonic/hupfile"
+	"github.com/koron-go/daemonic/pidfile"
+	"github.com/koron/duckhouse/internal/accesslog"
 	"github.com/koron/duckhouse/internal/authn"
 	"github.com/koron/duckhouse/internal/conndb"
 	"github.com/koron/duckhouse/internal/duckdbinit"
@@ -191,26 +195,6 @@ func parseLogFormat(s string) (logFormat, error) {
 	}
 }
 
-func newAccessLogger(name string, format logFormat) (*slog.Logger, error) {
-	var logw io.Writer = os.Stdout
-	if name != "" {
-		w, err := hupfile.New(name)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open access log file: %w", err)
-		}
-		logw = w
-	}
-	switch format {
-	default:
-		fallthrough
-	case textLog:
-		return slog.New(slog.NewTextHandler(logw, nil)), nil
-	case jsonLog:
-		return slog.New(slog.NewJSONHandler(logw, nil)), nil
-	}
-	return nil, fmt.Errorf("unsupported access log format: %v", format)
-}
-
 func (srv *Server) Serve(ctx context.Context) error {
 	// Preparement: check database configuration.
 	err := srv.checkDB(ctx)
@@ -218,7 +202,33 @@ func (srv *Server) Serve(ctx context.Context) error {
 		return err
 	}
 
-	// TODO: prepare access logger and pidfile
+	// Setup access logger
+	var logw io.Writer = os.Stdout
+	if srv.accessLogFile != "" {
+		w, err := hupfile.New(srv.accessLogFile)
+		if err != nil {
+			return fmt.Errorf("failed to open access log file: %w", err)
+		}
+		logw = w
+		defer w.Close()
+	}
+	switch srv.accessLogFormat {
+	default:
+		fallthrough
+	case textLog:
+		srv.accessLogger = slog.New(slog.NewTextHandler(logw, nil))
+	case jsonLog:
+		srv.accessLogger = slog.New(slog.NewJSONHandler(logw, nil))
+	}
+
+	// Set PID file
+	if srv.pidFile != "" {
+		err := pidfile.Write(srv.pidFile)
+		if err != nil {
+			return fmt.Errorf("failed to create PID file: %w", err)
+		}
+		defer pidfile.Close()
+	}
 
 	// Start server
 	httpsrv := &http.Server{
@@ -227,8 +237,10 @@ func (srv *Server) Serve(ctx context.Context) error {
 		ConnContext: srv.connManager.ConnContext,
 		ConnState:   srv.connManager.ConnState,
 	}
+	srvctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer cancel()
 	srv.logger.Info("listening on", "addr", httpsrv.Addr)
-	return ctxsrv.HTTP(httpsrv).WithShutdownTimeout(time.Minute).ServeWithContext(ctx)
+	return ctxsrv.HTTP(httpsrv).WithShutdownTimeout(time.Minute).ServeWithContext(srvctx)
 }
 
 func (srv *Server) checkDB(ctx context.Context) error {
@@ -315,9 +327,9 @@ func (srv *Server) newDuckhouseHandler() http.Handler {
 		mux.Handle("/shared/", http.StripPrefix("/shared/", h))
 	}
 
-	// TODO: Install middlewares.
+	// Install middlewares.
 	var h http.Handler = mux
-	//h = accesslog.WrapHandler(srv.accessLogger, h)
+	h = accesslog.WrapHandler(srv.accessLogger, h)
 	h = srv.authenticator.AuthenticateHandler(h)
 	return h
 }
