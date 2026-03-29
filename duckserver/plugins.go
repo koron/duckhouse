@@ -1,4 +1,4 @@
-package main
+package duckserver
 
 import (
 	_ "github.com/koron/duckhouse/internal/formatter/avro"
