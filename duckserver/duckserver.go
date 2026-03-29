@@ -130,6 +130,7 @@ func New(c Config) (*Server, error) {
 		address:       c.Address,
 		pidFile:       c.PIDFile,
 		accessLogFile: c.AccessLogFile,
+		withoutAuthz:  c.NoAuthz,
 		dbSharedDir:   filepath.Join(homedir, "shared"),
 		dbPrivateRoot: filepath.Join(homedir, "private"),
 		dbSettings: duckdbinit.Settings{
@@ -164,25 +165,6 @@ func New(c Config) (*Server, error) {
 			return nil, err
 		}
 		srv.authenticator = a
-	}
-	if c.NoAuthz {
-		if srv.authenticator == nil {
-			// FIXME: brush up message
-			return nil, errors.New("-noauthz need to be used with -authnfile")
-		}
-		srv.withoutAuthz = true
-	}
-
-	if c.DBInitQuery != "" {
-		if strings.HasPrefix(c.DBInitQuery, "@") {
-			b, err := os.ReadFile(c.DBInitQuery[1:])
-			if err != nil {
-				return nil, fmt.Errorf("failed to read init query: %w", err)
-			}
-			srv.dbInitQuery = string(b)
-		} else {
-			srv.dbInitQuery = c.DBInitQuery
-		}
 	}
 
 	// Setup DB connection manager

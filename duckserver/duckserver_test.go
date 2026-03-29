@@ -2,6 +2,7 @@ package duckserver_test
 
 import (
 	"bufio"
+	"context"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -9,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -22,20 +24,28 @@ import (
 
 const (
 	duckDBVersion = "v1.5.1"
-	versionQuery  = "SELECT version() AS V"
-	versionWant   = "V\n" + duckDBVersion + "\n"
+
+	versionQuery = "SELECT version() AS V"
+	versionWant  = "V\n" + duckDBVersion + "\n"
 
 	idSyntaxError = "ID syntax error: query ID should starts with \"Q_\"\n"
 )
 
 type testServer struct {
 	srv    *duckserver.Server
+	srvWg  *sync.WaitGroup
+	cancel context.CancelFunc
 	client *http.Client
 	URL    string
 }
 
 func (ts *testServer) Client() *http.Client {
 	return ts.client
+}
+
+func (ts *testServer) Shutdown() {
+	ts.cancel()
+	ts.srvWg.Wait()
 }
 
 func startServer0(t *testing.T) *testServer {
@@ -66,21 +76,28 @@ func startServer1(t *testing.T, configOpt configOption) *testServer {
 	if err != nil {
 		t.Fatal(err)
 	}
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
-		err := srv.Serve(t.Context())
+		err := srv.Serve(ctx)
 		if err != nil {
 			t.Helper()
 			t.Errorf("serve terminated with error: %s", err)
 		}
+		wg.Done()
 	}()
 	srv.WaitServe()
 
 	return &testServer{
 		srv:    srv,
+		srvWg:  &wg,
+		cancel: cancel,
 		client: &http.Client{
 			Transport: &http.Transport{},
 		},
-		URL:    srv.URL,
+		URL: srv.URL,
 	}
 }
 
@@ -483,4 +500,44 @@ func TestPrivateDir(t *testing.T) {
 	closeIdleConnections(t, ts)
 	time.Sleep(100 * time.Millisecond)
 	assert.IsNotExist(t, filepath.Join(privateRoot, rh1.ConnectionID))
+}
+
+func TestReadQuery(t *testing.T) {
+	ts := startServer0(t)
+
+	t.Run("q", func(t *testing.T) {
+		got, err := readResponse(doGet(ts, "/?f=csv&q="+url.QueryEscape(versionQuery)))
+		if err != nil {
+			t.Error(err)
+		}
+		assert.Equal(t, versionWant, got)
+	})
+
+	t.Run("query", func(t *testing.T) {
+		got, err := readResponse(doGet(ts, "/?f=csv&query="+url.QueryEscape(versionQuery)))
+		if err != nil {
+			t.Error(err)
+		}
+		assert.Equal(t, versionWant, got)
+	})
+
+	t.Run("no_queries", func(t *testing.T) {
+		resp, err := doGet(ts, "/?f=csv")
+		got, err := readResponse2(resp, err, 400, 400)
+		if err != nil {
+			t.Error(err)
+		}
+		assert.Equal(t, "No queries: no queries\n", got)
+	})
+}
+
+func TestPIDFile(t *testing.T) {
+	pidfile := filepath.Join(t.TempDir(), "test.pid")
+	ts := startServer1(t, func(c *duckserver.Config) *duckserver.Config {
+		c.PIDFile = pidfile
+		return c
+	})
+	assert.IsRegularFile(t, pidfile)
+	ts.Shutdown()
+	assert.IsNotExist(t, pidfile)
 }

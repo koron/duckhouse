@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"embed"
+	"errors"
 	"flag"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/koron/duckhouse/duckserver"
 )
@@ -36,6 +39,7 @@ func run() error {
 
 func flag2config(c *duckserver.Config) error {
 	var (
+		err           error
 		uiResourceDir string
 	)
 
@@ -57,7 +61,19 @@ func flag2config(c *duckserver.Config) error {
 	flag.StringVar(&uiResourceDir, "ui.resourcedir", "", `UI resource directory for development`)
 	flag.Parse()
 
-	var err error
+	if c.NoAuthz && c.AuthnFile == "" {
+		return errors.New("-noauthz need to be used with -authnfile")
+	}
+
+	// Try to read init query from a file.
+	if strings.HasPrefix(c.DBInitQuery, "@") {
+		b, err := os.ReadFile(c.DBInitQuery[1:])
+		if err != nil {
+			return fmt.Errorf("failed to read init query: %s", err)
+		}
+		c.DBInitQuery = string(b)
+	}
+
 	c.UIResourceFS, err = getUIFS(uiResourceDir)
 	if err != nil {
 		return err
