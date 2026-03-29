@@ -147,6 +147,41 @@ $ curl 'http://127.0.0.1:9998/?f=table' -d "SELECT version() as VER"
     -   Status Code: `200`
     -   ボディ: `OK\r\n`
 
+### サーバー設定情報
+
+-   Path: `/config/`
+-   Method: `GET`
+-   Request Parameters: なし
+-   Response Parameters:
+    -   Status Code: `200`
+    -   ヘッダー:
+        -   `Content-Type`: `application/json`
+    -   ボディ: Duckhouseサーバーの起動時設定のJSON
+
+        例:
+
+        ```json
+        {
+          "EnableDebugLog": false,
+          "Address": "localhost:9998",
+          "MaxDB": 20,
+          "PIDFile": "",
+          "AccessLogFile": "",
+          "AccessLogFormat": "text",
+          "AuthnFile": "",
+          "NoAuthz": false,
+          "DBHomeDir": "/var/run/duckhouse",
+          "DBThreads": 1,
+          "DBMemoryLimit": "1GiB",
+          "DBMaxTempDirSize": "10GiB",
+          "DBExternalAccess": true,
+          "DBLockConfig": true,
+          "DBInitQuery": "",
+          "UIResourceFS": {}
+        }
+        ```
+
+
 ### DuckDBインスタンス(接続)一覧
 
 -   Path: `/status/connections/`
