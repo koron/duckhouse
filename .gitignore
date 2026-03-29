@@ -4,6 +4,7 @@ tags
 tmp/
 
 .duckdb/
+.duckhouse/
 
 *.exe
 duckhouse
