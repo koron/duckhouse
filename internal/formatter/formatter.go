@@ -7,6 +7,11 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
+)
+
+var (
+	ErrUnsupportedFormat = errors.New("unsupported format")
 )
 
 type Factory interface {
@@ -47,6 +52,11 @@ func AnyToStr(v any) string {
 	return fmt.Sprint(v)
 }
 
+func TimeToStr(v any) string {
+	t := v.(time.Time)
+	return t.Format("15:04:05")
+}
+
 func BlobToStr(v any) string {
 	return string(v.([]uint8))
 }
@@ -56,4 +66,34 @@ func Get(params map[string]string, name, defaultValue string) string {
 		return s
 	}
 	return defaultValue
+}
+
+func FindAndCreate(s string, w io.Writer) (Factory, Writer, error) {
+	parts := strings.Split(s, ",")
+	format := parts[0]
+
+	// Parse params
+	params := map[string]string{}
+	for _, s := range parts[1:] {
+		p := strings.SplitN(s, ":", 2)
+		if p[0] == "" {
+			continue
+		}
+		if len(p) == 1 {
+			params[p[0]] = ""
+			continue
+		}
+		params[p[0]] = p[1]
+	}
+
+	factory, ok := Find(format)
+	if !ok {
+		return nil, nil, ErrUnsupportedFormat
+	}
+	writer, err := factory.Create(w, params)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid parameters: format=%s params=%+v", format, params)
+	}
+
+	return factory, writer, nil
 }

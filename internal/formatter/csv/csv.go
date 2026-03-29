@@ -55,6 +55,8 @@ func (w *Writer) WriteHeader(columnTypes []*sql.ColumnType) error {
 	for i, typ := range columnTypes {
 		w.records[i] = typ.Name()
 		switch typ.DatabaseTypeName() {
+		case "TIME":
+			w.converters[i] = formatter.TimeToStr
 		case "BLOB":
 			w.converters[i] = formatter.BlobToStr
 		default:

@@ -455,15 +455,10 @@ func (srv *Server) handleQuery(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	// determine format from the request
-	format, params := parseFormat(r)
-	slog.Debug("parsed format", "format", format, "params", params)
-	factory, ok := formatter.Find(format)
-	if !ok {
-		return httperror.Newf(400, "Unsupported format: %s", format)
-	}
-	fw, err := factory.Create(w, params)
+	format := getFormat(r)
+	factory, formatWriter, err := formatter.FindAndCreate(format, w)
 	if err != nil {
-		return httperror.Newf(400, "Invalid parameters for the format: %s params=%+v", format, params)
+		return httperror.Newf(400, "Unsupported format: %s", err)
 	}
 
 	// Determine database
@@ -503,7 +498,7 @@ func (srv *Server) handleQuery(w http.ResponseWriter, r *http.Request) error {
 	// Write the response body
 	w.Header().Set("Content-Type", factory.ContentType())
 	w.WriteHeader(200)
-	err = writeRows(q.Context(), fw, rows)
+	err = writeRows(q.Context(), formatWriter, rows)
 	if err != nil {
 		return httperror.Newf(500, "Serialization error: %s", err)
 	}
@@ -528,30 +523,16 @@ func readQuery(r *http.Request) (string, error) {
 	return "", ErrNoQuery
 }
 
-func parseFormat(r *http.Request) (format string, params map[string]string) {
+func getFormat(r *http.Request) string {
 	q := r.URL.Query()
-	format = q.Get("format")
+	format := q.Get("format")
 	if format == "" {
 		format = q.Get("f")
 	}
-	parts := strings.Split(format, ",")
-	if parts[0] == "" {
-		parts[0] = defaultFormat
+	if format == "" {
+		format = defaultFormat
 	}
-	// Parse parameters
-	params = map[string]string{}
-	for _, s := range parts[1:] {
-		p := strings.SplitN(s, ":", 2)
-		if p[0] == "" {
-			continue
-		}
-		if len(p) == 1 {
-			params[p[0]] = ""
-			continue
-		}
-		params[p[0]] = p[1]
-	}
-	return parts[0], params
+	return format
 }
 
 func writeRows(ctx context.Context, fw formatter.Writer, rows *sql.Rows) error {
