@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -77,7 +78,6 @@ func startServer1(t *testing.T, configOpt configOption) *testServer {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(cancel)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -89,6 +89,9 @@ func startServer1(t *testing.T, configOpt configOption) *testServer {
 		wg.Done()
 	}()
 	srv.WaitServe()
+
+	t.Cleanup(wg.Wait)
+	t.Cleanup(cancel)
 
 	return &testServer{
 		srv:    srv,
@@ -540,4 +543,36 @@ func TestPIDFile(t *testing.T) {
 	assert.IsRegularFile(t, pidfile)
 	ts.Shutdown()
 	assert.IsNotExist(t, pidfile)
+}
+
+func TestGetConfigJSON(t *testing.T) {
+	var homedir string
+	ts := startServer1(t, func(c *duckserver.Config) *duckserver.Config {
+		homedir = c.DBHomeDir
+		return c
+	})
+	got, err := readResponse(doGet(ts, "/config/"))
+	if err != nil {
+		t.Error(err)
+	}
+	want := `{
+  "EnableDebugLog": false,
+  "Address": "127.0.0.1:0",
+  "MaxDB": 4,
+  "PIDFile": "",
+  "AccessLogFile": "test.discard",
+  "AccessLogFormat": "text",
+  "AuthnFile": "",
+  "NoAuthz": false,
+  "DBHomeDir": ` + strconv.Quote(homedir) + `,
+  "DBThreads": 1,
+  "DBMemoryLimit": "1GiB",
+  "DBMaxTempDirSize": "2GiB",
+  "DBExternalAccess": true,
+  "DBLockConfig": true,
+  "DBInitQuery": "",
+  "UIResourceFS": null
+}
+`
+	assert.Equal(t, want, got)
 }

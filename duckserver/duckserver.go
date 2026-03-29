@@ -93,6 +93,8 @@ func DefaultConfig() Config {
 }
 
 type Server struct {
+	config *Config
+
 	logger       *slog.Logger
 	accessLogger *slog.Logger
 
@@ -127,6 +129,7 @@ func New(c Config) (*Server, error) {
 	}
 
 	srv := Server{
+		config:        &c,
 		address:       c.Address,
 		pidFile:       c.PIDFile,
 		accessLogFile: c.AccessLogFile,
@@ -359,6 +362,7 @@ func (srv *Server) newDuckhouseHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/{$}", errorAwareHandler(srv.handleQuery))
 	mux.Handle("GET /ping/{$}", errorAwareHandler(srv.handlePing))
+	mux.Handle("GET /config/", errorAwareHandler(srv.handleConfig))
 	mux.Handle("GET /status/connections/{$}", errorAwareHandler(srv.handleStatusConnections))
 	mux.Handle("GET /status/queries/{$}", errorAwareHandler(srv.handleStatusQueries))
 	mux.Handle("DELETE /status/queries/{queryID}", errorAwareHandler(srv.handleInterruptQuery))
@@ -424,6 +428,14 @@ func (srv *Server) handlePing(w http.ResponseWriter, r *http.Request) error {
 	w.WriteHeader(200)
 	w.Write([]byte("OK\r\n"))
 	return nil
+}
+
+func (srv *Server) handleConfig(w http.ResponseWriter, r *http.Request) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(srv.config)
 }
 
 func (srv *Server) handleQuery(w http.ResponseWriter, r *http.Request) error {
