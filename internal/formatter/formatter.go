@@ -8,6 +8,8 @@ import (
 	"io"
 	"strings"
 	"time"
+
+	"github.com/duckdb/duckdb-go/v2"
 )
 
 var (
@@ -52,9 +54,75 @@ func AnyToStr(v any) string {
 	return fmt.Sprint(v)
 }
 
+func DateToStr(v any) string {
+	t := v.(time.Time)
+	return t.Format("2006-01-02")
+}
+
+func IntervalToStr(v any) string {
+	interval, ok := v.(duckdb.Interval)
+	if !ok {
+		return fmt.Sprint(v)
+	}
+	parts := make([]string, 0, 7)
+	if interval.Months != 0 {
+		y, m := interval.Months/12, interval.Months%12
+		if y != 0 {
+			parts = append(parts, fmt.Sprintf("%dy", y))
+		}
+		if m != 0 {
+			parts = append(parts, fmt.Sprintf("%dmo", m))
+		}
+	}
+	if interval.Days != 0 {
+		parts = append(parts, fmt.Sprintf("%dd", interval.Days))
+	}
+	if interval.Micros != 0 {
+		const (
+			hour = 60 * 60 * 1000 * 1000
+			min  = 60 * 1000 * 1000
+			sec  = 1000 * 1000
+			msec = 1000
+		)
+		us := interval.Micros
+		h := us / hour
+		if h != 0 {
+			us -= h * hour
+			parts = append(parts, fmt.Sprintf("%dh", h))
+		}
+		m := us / min
+		if m != 0 {
+			us -= m * min
+			parts = append(parts, fmt.Sprintf("%dm", m))
+		}
+		s := us / sec
+		if s != 0 {
+			us -= s * sec
+			parts = append(parts, fmt.Sprintf("%ds", s))
+		}
+		ms := us / msec
+		if ms != 0 {
+			us -= ms * msec
+			parts = append(parts, fmt.Sprintf("%dms", ms))
+		}
+		if us != 0 {
+			parts = append(parts, fmt.Sprintf("%dμs", us))
+		}
+	}
+	if len(parts) == 0 {
+		return "0"
+	}
+	return strings.Join(parts, " ")
+}
+
 func TimeToStr(v any) string {
 	t := v.(time.Time)
 	return t.Format("15:04:05")
+}
+
+func TimestampToStr(v any) string {
+	t := v.(time.Time)
+	return t.Format("2006-01-02 15:04:05")
 }
 
 func BlobToStr(v any) string {
