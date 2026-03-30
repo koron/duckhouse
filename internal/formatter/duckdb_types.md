@@ -52,7 +52,6 @@
         -   USMALLINT
         -   UTINYINT
     -   Float
-        -   DECIMAL(prec, scale)
         -   DOUBLE
         -   FLOAT
     -   Time
@@ -68,6 +67,7 @@
         -   VARCHAR
     -   Others
         -   BOOLEAN
+        -   DECIMAL(prec, scale)
         -   JSON
         -   UUID
 -   Nested / Composite Types
