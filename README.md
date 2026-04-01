@@ -91,7 +91,7 @@ $ duckhouse
 ```console
 $ curl 'http://127.0.0.1:9998/' -d "SELECT version() as VER"
 VER
-v1.5.0
+v1.5.1
 ```
 
 同じクエリーの結果を別のフォーマット(table)で受信します。
@@ -101,7 +101,7 @@ $ curl 'http://127.0.0.1:9998/?f=table' -d "SELECT version() as VER"
 ┌────────┐
 │  VER   │
 ├────────┤
-│ v1.5.0 │
+│ v1.5.1 │
 └────────┘
 ```
 
@@ -293,12 +293,12 @@ Count
 共有ディレクトリはHTTPブラウザやクライアントから
 `/shared/` にアクセスすることで内容を確認できます。
 `/shared/` は単なるHTTPファイルサーバーだけではなく
-[WebDAV][webdav] を実装している。
-そのため WebDAV クライアントや cURL を用いて
+[WebDAV][webdav] を実装しています。
+それにより WebDAV クライアントや cURL を用いて
 ディレクトリの作成、新規ファイルのアップロード、
-ファイル及びディレクトリの削除が可能となっている。
+ファイル及びディレクトリの削除が可能です。
 
-WebDAVによる捜査の具体的な方法は以下のコマンド例を参照:
+WebDAVによる捜査の具体的な方法は以下のコマンド例を参照してください:
 
 ```sh
 # ディレクトリの作成 (MKCOL メソッド)
@@ -311,7 +311,7 @@ curl -X PUT http://127.0.0.1:9998/shared/hello.txt -d "Hello World"
 curl -X DELETE http://127.0.0.1:9998/shared/delete_target
 ```
 
-WebDAV 固有のディレクトリに変更を伴う機能は認証・認可の対象となっている。
+WebDAV 固有の変更を伴う操作には認証・認可が適用されます。
 
 [webdav]:https://ja.wikipedia.org/wiki/WebDAV
 
