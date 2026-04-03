@@ -1,4 +1,4 @@
-module github.com/koron/duckhouse
+module github.com/koron/duckpop
 
 go 1.26
 

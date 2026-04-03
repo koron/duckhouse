@@ -1,11 +1,11 @@
-// Package {{.packageName}} proivdes {{.name}} formatter for duckhouse.
+// Package {{.packageName}} proivdes {{.name}} formatter for Duckpop.
 package {{.packageName}}
 
 import (
 	"database/sql"
 	"io"
 
-	"github.com/koron/duckhouse/internal/formatter"
+	"github.com/koron/duckpop/internal/formatter"
 )
 
 func init() {

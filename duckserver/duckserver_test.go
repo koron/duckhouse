@@ -19,8 +19,8 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/koron/duckhouse/duckserver"
-	"github.com/koron/duckhouse/internal/assert"
+	"github.com/koron/duckpop/duckserver"
+	"github.com/koron/duckpop/internal/assert"
 )
 
 const (

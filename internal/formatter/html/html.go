@@ -1,11 +1,11 @@
-// Package html proivdes HTML formatter for duckhouse.
+// Package html proivdes HTML formatter for Duckpop.
 package html
 
 import (
 	"io"
 
-	"github.com/koron/duckhouse/internal/formatter"
-	"github.com/koron/duckhouse/internal/formatter/table"
+	"github.com/koron/duckpop/internal/formatter"
+	"github.com/koron/duckpop/internal/formatter/table"
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/renderer"
 )

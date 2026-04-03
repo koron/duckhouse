@@ -1,4 +1,4 @@
-// Package accesslog provides access log for duckhouse
+// Package accesslog provides access log for duckpop
 package accesslog
 
 import (
@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/koron/duckhouse/internal/authn"
-	"github.com/koron/duckhouse/internal/conndb"
+	"github.com/koron/duckpop/internal/authn"
+	"github.com/koron/duckpop/internal/conndb"
 )
 
 type QueryReporter interface {

@@ -1,4 +1,4 @@
-// Package duckserver proivdes HTTP server of DuckHouse.
+// Package duckserver proivdes HTTP server of Duckpop.
 package duckserver
 
 import (
@@ -24,20 +24,20 @@ import (
 	"github.com/koron-go/ctxsrv"
 	"github.com/koron-go/daemonic/hupfile"
 	"github.com/koron-go/daemonic/pidfile"
-	"github.com/koron/duckhouse/internal/accesslog"
-	"github.com/koron/duckhouse/internal/authn"
-	"github.com/koron/duckhouse/internal/conndb"
-	"github.com/koron/duckhouse/internal/duckdbinit"
-	"github.com/koron/duckhouse/internal/fileserver"
-	"github.com/koron/duckhouse/internal/formatter"
-	"github.com/koron/duckhouse/internal/httperror"
-	"github.com/koron/duckhouse/internal/querydb"
+	"github.com/koron/duckpop/internal/accesslog"
+	"github.com/koron/duckpop/internal/authn"
+	"github.com/koron/duckpop/internal/conndb"
+	"github.com/koron/duckpop/internal/duckdbinit"
+	"github.com/koron/duckpop/internal/fileserver"
+	"github.com/koron/duckpop/internal/formatter"
+	"github.com/koron/duckpop/internal/httperror"
+	"github.com/koron/duckpop/internal/querydb"
 )
 
 const (
-	AuthnIDHeader      = "Duckhouse-Authnid"
-	ConnectionIDHeader = "Duckhouse-Connectionid"
-	DurationHeader     = "Duckhouse-Duration"
+	AuthnIDHeader      = "Duckpop-Authnid"
+	ConnectionIDHeader = "Duckpop-Connectionid"
+	DurationHeader     = "Duckpop-Duration"
 
 	defaultFormat = "csv"
 )
@@ -83,7 +83,7 @@ func DefaultConfig() Config {
 		Address:          "localhost:9998",
 		MaxDB:            20,
 		AccessLogFormat:  "text",
-		DBHomeDir:        filepath.Join(getwd(), ".duckhouse"),
+		DBHomeDir:        filepath.Join(getwd(), ".duckpop"),
 		DBThreads:        1,
 		DBMemoryLimit:    "1GiB",
 		DBMaxTempDirSize: "10GiB",

@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/koron/duckhouse/internal/conndb"
+	"github.com/koron/duckpop/internal/conndb"
 )
 
 type Database struct {

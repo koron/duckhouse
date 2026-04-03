@@ -4,8 +4,8 @@ tags
 tmp/
 
 .duckdb/
-.duckhouse/
+.duckpop/
 
 *.exe
-duckhouse
-duckhouse.pid
+duckpop
+duckpop.pid

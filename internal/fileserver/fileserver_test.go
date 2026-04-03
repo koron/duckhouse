@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/koron/duckhouse/internal/assert"
-	"github.com/koron/duckhouse/internal/fileserver"
+	"github.com/koron/duckpop/internal/assert"
+	"github.com/koron/duckpop/internal/fileserver"
 )
 
 func writeFile(t *testing.T, name, body string) {
