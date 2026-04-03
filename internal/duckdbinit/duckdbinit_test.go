@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	_ "github.com/duckdb/duckdb-go/v2"
-	"github.com/koron/duckhouse/internal/assert"
-	"github.com/koron/duckhouse/internal/duckdbinit"
+	"github.com/koron/duckpop/internal/assert"
+	"github.com/koron/duckpop/internal/duckdbinit"
 )
 
 func testSetting[T any](t *testing.T, db *sql.DB, name string, want T) {

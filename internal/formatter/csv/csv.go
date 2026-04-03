@@ -1,4 +1,4 @@
-// Package csv proivdes CSV formatter for duckhouse.
+// Package csv proivdes CSV formatter for Duckpop.
 package csv
 
 import (
@@ -6,7 +6,7 @@ import (
 	"encoding/csv"
 	"io"
 
-	"github.com/koron/duckhouse/internal/formatter"
+	"github.com/koron/duckpop/internal/formatter"
 )
 
 const (

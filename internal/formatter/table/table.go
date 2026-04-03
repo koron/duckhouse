@@ -1,11 +1,11 @@
-// Package table proivdes plain text table formatter for duckhouse.
+// Package table proivdes plain text table formatter for Duckpop.
 package table
 
 import (
 	"database/sql"
 	"io"
 
-	"github.com/koron/duckhouse/internal/formatter"
+	"github.com/koron/duckpop/internal/formatter"
 	"github.com/olekukonko/tablewriter"
 )
 

@@ -1,11 +1,11 @@
-// Package markdown proivdes Markdown formatter for duckhouse.
+// Package markdown proivdes Markdown formatter for Duckpop.
 package markdown
 
 import (
 	"io"
 
-	"github.com/koron/duckhouse/internal/formatter"
-	"github.com/koron/duckhouse/internal/formatter/table"
+	"github.com/koron/duckpop/internal/formatter"
+	"github.com/koron/duckpop/internal/formatter/table"
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/renderer"
 )

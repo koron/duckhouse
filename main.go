@@ -12,12 +12,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/koron/duckhouse/duckserver"
+	"github.com/koron/duckpop/duckserver"
 )
 
 func main() {
 	if err := run(); err != nil {
-		slog.Error("duckhouse terminated", "error", err)
+		slog.Error("duckpop terminated", "error", err)
 		os.Exit(1)
 	}
 }
@@ -51,7 +51,7 @@ func flag2config(c *duckserver.Config) error {
 	flag.StringVar(&c.AccessLogFormat, "accesslog.format", "text", `access log format: "text" or "json"`)
 	flag.StringVar(&c.AuthnFile, "authnfile", "", `authentication information file`)
 	flag.BoolVar(&c.NoAuthz, "noauthz", false, `executing queries etc. w/o authz`)
-	flag.StringVar(&c.DBHomeDir, "db.homedir", filepath.Join(getwd(), ".duckhouse"), `home dir for duckdb`)
+	flag.StringVar(&c.DBHomeDir, "db.homedir", filepath.Join(getwd(), ".duckpop"), `home dir for duckdb`)
 	flag.IntVar(&c.DBThreads, "db.threads", 1, `initial value of DB "threads"`)
 	flag.StringVar(&c.DBMemoryLimit, "db.memorylimit", "1GiB", `initial value of DB "memory_limit"`)
 	flag.StringVar(&c.DBMaxTempDirSize, "db.maxtempdirsize", "10GiB", `max size of temporary dir`)

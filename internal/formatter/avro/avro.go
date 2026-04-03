@@ -1,4 +1,4 @@
-// Package avro proivdes Apache Avro formatter for duckhouse.
+// Package avro proivdes Apache Avro formatter for Duckpop.
 package avro
 
 import (
@@ -8,11 +8,11 @@ import (
 
 	"github.com/hamba/avro/v2"
 	"github.com/hamba/avro/v2/ocf"
-	"github.com/koron/duckhouse/internal/formatter"
+	"github.com/koron/duckpop/internal/formatter"
 )
 
 const (
-	defaultSchemaNS   = "net.kaoriya.duckhouse"
+	defaultSchemaNS   = "net.kaoriya.duckpop"
 	defaultSchemaName = "Table"
 )
 

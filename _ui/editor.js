@@ -3,7 +3,7 @@
 
   const d = g.document;
   const localStorage = g.localStorage;
-  const storagePrefix = "duckhouse_";
+  const storagePrefix = "duckpop_";
 
   const queryForm = d.querySelector("#query");
   const outputForm = d.querySelector("#output");
