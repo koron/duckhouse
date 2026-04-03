@@ -3,9 +3,9 @@ package html_test
 import (
 	"testing"
 
-	"github.com/koron/duckhouse/internal/assert"
-	"github.com/koron/duckhouse/internal/formatter/html"
-	"github.com/koron/duckhouse/internal/formatter/formattertest"
+	"github.com/koron/duckpop/internal/assert"
+	"github.com/koron/duckpop/internal/formatter/html"
+	"github.com/koron/duckpop/internal/formatter/formattertest"
 )
 
 func TestFactory(t *testing.T) {

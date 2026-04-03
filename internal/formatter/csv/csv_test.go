@@ -4,9 +4,9 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/koron/duckhouse/internal/assert"
-	"github.com/koron/duckhouse/internal/formatter/csv"
-	"github.com/koron/duckhouse/internal/formatter/formattertest"
+	"github.com/koron/duckpop/internal/assert"
+	"github.com/koron/duckpop/internal/formatter/csv"
+	"github.com/koron/duckpop/internal/formatter/formattertest"
 )
 
 const (

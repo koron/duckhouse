@@ -3,9 +3,9 @@ package table_test
 import (
 	"testing"
 
-	"github.com/koron/duckhouse/internal/assert"
-	"github.com/koron/duckhouse/internal/formatter/formattertest"
-	"github.com/koron/duckhouse/internal/formatter/table"
+	"github.com/koron/duckpop/internal/assert"
+	"github.com/koron/duckpop/internal/formatter/formattertest"
+	"github.com/koron/duckpop/internal/formatter/table"
 )
 
 func TestFactory(t *testing.T) {

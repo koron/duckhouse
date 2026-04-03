@@ -3,9 +3,9 @@ package avro_test
 import (
 	"testing"
 
-	"github.com/koron/duckhouse/internal/assert"
-	"github.com/koron/duckhouse/internal/formatter/avro"
-	"github.com/koron/duckhouse/internal/formatter/formattertest"
+	"github.com/koron/duckpop/internal/assert"
+	"github.com/koron/duckpop/internal/formatter/avro"
+	"github.com/koron/duckpop/internal/formatter/formattertest"
 )
 
 func TestFactory(t *testing.T) {

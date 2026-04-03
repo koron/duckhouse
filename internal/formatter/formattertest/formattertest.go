@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	_ "github.com/duckdb/duckdb-go/v2"
-	"github.com/koron/duckhouse/internal/formatter"
+	"github.com/koron/duckpop/internal/formatter"
 )
 
 func Find[T formatter.Factory](t *testing.T, name string) T {
