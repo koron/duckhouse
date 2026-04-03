@@ -253,7 +253,7 @@ func (srv *Server) Serve(ctx context.Context) error {
 
 	httpsrv := &http.Server{
 		Addr:        srv.address,
-		Handler:     srv.newDuckhouseHandler(),
+		Handler:     srv.newDuckpopHandler(),
 		ConnContext: srv.connManager.ConnContext,
 		ConnState:   srv.connManager.ConnState,
 		BaseContext: func(ln net.Listener) context.Context {
@@ -357,7 +357,7 @@ func (srv *Server) getPrivateDir(ctx context.Context, makeDir bool) (string, err
 	return privateDir, nil
 }
 
-func (srv *Server) newDuckhouseHandler() http.Handler {
+func (srv *Server) newDuckpopHandler() http.Handler {
 	// Define handlers
 	mux := http.NewServeMux()
 	mux.Handle("/{$}", errorAwareHandler(srv.handleQuery))
