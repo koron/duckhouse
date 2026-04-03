@@ -8,11 +8,13 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func Equal[T any](t *testing.T, want, got T, options ...cmp.Option) {
+func Equal[T any](t *testing.T, want, got T, options ...cmp.Option) bool {
 	t.Helper()
 	if d := cmp.Diff(want, got, options...); d != "" {
 		t.Errorf("assert failed, mismatch: -want +got\n%s", d)
+		return false
 	}
+	return true
 }
 
 func IsRegularFile(t *testing.T, name string) {
