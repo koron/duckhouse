@@ -12,6 +12,8 @@ import (
 	"net"
 	"net/http"
 	"sync"
+
+	"github.com/koron/duckpop/internal/syncmap"
 )
 
 type Manager struct {
@@ -19,9 +21,9 @@ type Manager struct {
 	Opener Opener
 	Closer Closer
 
-	idSet    sync.Map
-	connToID sync.Map
-	idToDB   sync.Map
+	idSet    syncmap.Map[ID, struct{}]
+	connToID syncmap.Map[net.Conn, ID]
+	idToDB   syncmap.Map[ID, *sql.DB]
 
 	dbCount int
 	dbMutex sync.Mutex
@@ -56,7 +58,7 @@ func (id ID) String() string {
 func (m *Manager) newID(c net.Conn) ID {
 	for {
 		id := ID(rand.Uint32())
-		_, ok := m.idSet.LoadOrStore(id, true)
+		_, ok := m.idSet.LoadOrStore(id, struct{}{})
 		if !ok {
 			m.connToID.Store(c, id)
 			return id
@@ -93,15 +95,14 @@ func (m *Manager) closeDB(db *sql.DB, id ID) error {
 }
 
 func (m *Manager) closeConn(c net.Conn) error {
-	rawid, ok := m.connToID.LoadAndDelete(c)
+	id, ok := m.connToID.LoadAndDelete(c)
 	if !ok {
 		return fmt.Errorf("no ID for net.Conn=%p", c)
 	}
 
 	m.dbMutex.Lock()
-	id := rawid.(ID)
 	m.idSet.Delete(id)
-	rawdb, ok := m.idToDB.LoadAndDelete(id)
+	db, ok := m.idToDB.LoadAndDelete(id)
 	if !ok {
 		m.dbMutex.Unlock()
 		return nil
@@ -118,7 +119,7 @@ func (m *Manager) closeConn(c net.Conn) error {
 			slog.Warn("failed to close DB", "connID", id, "error", err)
 		}
 		slog.Debug("DB closed", "connID", id, "DB", dbToStr(db), "count", count)
-	}(rawdb.(*sql.DB))
+	}(db)
 
 	return nil
 }
@@ -139,9 +140,9 @@ func (m *Manager) GetDB(ctx context.Context) (*sql.DB, ID, error) {
 	if !ok {
 		return nil, 0, ErrNoConnection
 	}
-	rawdb, ok := m.idToDB.Load(id)
+	db, ok := m.idToDB.Load(id)
 	if ok {
-		return rawdb.(*sql.DB), id, nil
+		return db, id, nil
 	}
 	// Create a new database for the connection
 	m.dbMutex.Lock()
@@ -165,8 +166,8 @@ func (m *Manager) GetDB(ctx context.Context) (*sql.DB, ID, error) {
 
 func (m *Manager) Databases() iter.Seq2[ID, *sql.DB] {
 	return func(yield func(ID, *sql.DB) bool) {
-		m.idToDB.Range(func(key, value any) bool {
-			return yield(key.(ID), value.(*sql.DB))
+		m.idToDB.Range(func(id ID, db *sql.DB) bool {
+			return yield(id, db)
 		})
 	}
 }
