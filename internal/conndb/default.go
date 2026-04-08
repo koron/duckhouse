@@ -29,7 +29,3 @@ func ConnContext(ctx context.Context, c net.Conn) context.Context {
 func ConnState(c net.Conn, s http.ConnState) {
 	Default.ConnState(c, s)
 }
-
-func GetID(ctx context.Context) (ID, bool) {
-	return Default.GetID(ctx)
-}

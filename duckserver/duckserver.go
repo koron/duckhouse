@@ -343,7 +343,7 @@ func (srv *Server) getPrivateDir(ctx context.Context, makeDir bool) (string, err
 	if srv.dbPrivateRoot == "" {
 		return "", nil
 	}
-	connID, ok := srv.connManager.GetID(ctx)
+	connID, ok := conndb.GetID(ctx)
 	if !ok {
 		slog.Debug("connection ID cannot be determined")
 		return "", nil

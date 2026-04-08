@@ -113,7 +113,8 @@ var (
 	ErrNoOpener     = errors.New("no Opener specified")
 )
 
-func (m *Manager) GetID(ctx context.Context) (ID, bool) {
+// GetID extracts associated conndb.ID from context.Context
+func GetID(ctx context.Context) (ID, bool) {
 	id, ok := ctx.Value(connIDKey{}).(ID)
 	return id, ok
 }
