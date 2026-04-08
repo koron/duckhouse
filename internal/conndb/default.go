@@ -2,7 +2,6 @@ package conndb
 
 import (
 	"context"
-	"database/sql"
 	"net"
 	"net/http"
 )
@@ -33,8 +32,4 @@ func ConnState(c net.Conn, s http.ConnState) {
 
 func GetID(ctx context.Context) (ID, bool) {
 	return Default.GetID(ctx)
-}
-
-func GetDB(ctx context.Context) (*sql.DB, ID, error) {
-	return Default.GetDB(ctx)
 }

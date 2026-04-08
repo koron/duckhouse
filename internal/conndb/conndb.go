@@ -21,9 +21,8 @@ type Manager struct {
 	Opener Opener
 	Closer Closer
 
-	idSet    syncmap.Map[ID, struct{}]
 	connToID syncmap.Map[net.Conn, ID]
-	idToDB   syncmap.Map[ID, *sql.DB]
+	clients  syncmap.Map[ID, *Client]
 
 	dbCount int
 	dbMutex sync.Mutex
@@ -55,13 +54,15 @@ func (id ID) String() string {
 	return fmt.Sprintf("C_%08x", uint32(id))
 }
 
-func (m *Manager) newID(c net.Conn) ID {
+func (m *Manager) newClient(c net.Conn) *Client {
+	client := &Client{m: m}
 	for {
 		id := ID(rand.Uint32())
-		_, ok := m.idSet.LoadOrStore(id, struct{}{})
+		_, ok := m.clients.LoadOrStore(id, client)
 		if !ok {
 			m.connToID.Store(c, id)
-			return id
+			client.ID = id
+			return client
 		}
 	}
 }
@@ -69,8 +70,8 @@ func (m *Manager) newID(c net.Conn) ID {
 type connIDKey = struct{}
 
 func (m *Manager) ConnContext(ctx context.Context, c net.Conn) context.Context {
-	id := m.newID(c)
-	return context.WithValue(ctx, connIDKey{}, id)
+	client := m.newClient(c)
+	return context.WithValue(ctx, connIDKey{}, client.ID)
 }
 
 func (m *Manager) ConnState(c net.Conn, s http.ConnState) {
@@ -82,49 +83,31 @@ func (m *Manager) ConnState(c net.Conn, s http.ConnState) {
 	}
 }
 
-func dbToStr(db *sql.DB) string {
-	return fmt.Sprintf("%p", db)
-}
-
-func (m *Manager) closeDB(db *sql.DB, id ID) error {
-	ctx := context.WithValue(context.Background(), connIDKey{}, id)
-	if m.Closer == nil {
-		return db.Close()
-	}
-	return m.Closer.Close(ctx, db)
-}
-
 func (m *Manager) closeConn(c net.Conn) error {
 	id, ok := m.connToID.LoadAndDelete(c)
 	if !ok {
 		return fmt.Errorf("no ID for net.Conn=%p", c)
 	}
 
-	m.dbMutex.Lock()
-	m.idSet.Delete(id)
-	db, ok := m.idToDB.LoadAndDelete(id)
+	client, ok := m.clients.LoadAndDelete(id)
 	if !ok {
-		m.dbMutex.Unlock()
 		return nil
 	}
-	if m.dbCount > 0 {
-		m.dbCount--
-	}
-	count := m.dbCount
-	m.dbMutex.Unlock()
 
-	go func(db *sql.DB) {
-		err := m.closeDB(db, id)
+	go func(client *Client) {
+		client.mu.Lock()
+		err := client.close()
+		client.mu.Unlock()
 		if err != nil {
-			slog.Warn("failed to close DB", "connID", id, "error", err)
+			slog.Warn("failed to close DB", "connID", client.ID, "error", err)
 		}
-		slog.Debug("DB closed", "connID", id, "DB", dbToStr(db), "count", count)
-	}(db)
+	}(client)
 
 	return nil
 }
 
 var (
+	ErrNoID         = errors.New("no IDs assigned for the context")
 	ErrNoConnection = errors.New("no connections assigned for the context")
 	ErrMaxDB        = errors.New("reached maximum number of DB")
 	ErrNoOpener     = errors.New("no Opener specified")
@@ -135,39 +118,110 @@ func (m *Manager) GetID(ctx context.Context) (ID, bool) {
 	return id, ok
 }
 
-func (m *Manager) GetDB(ctx context.Context) (*sql.DB, ID, error) {
-	id, ok := ctx.Value(connIDKey{}).(ID)
-	if !ok {
-		return nil, 0, ErrNoConnection
-	}
-	db, ok := m.idToDB.Load(id)
-	if ok {
-		return db, id, nil
-	}
-	// Create a new database for the connection
+func dbToStr(db *sql.DB) string {
+	return fmt.Sprintf("%p", db)
+}
+
+func (m *Manager) openDB(ctx context.Context, id ID) (*sql.DB, error) {
 	m.dbMutex.Lock()
 	defer m.dbMutex.Unlock()
 	if m.dbCount >= m.MaxDB {
-		return nil, 0, ErrMaxDB
+		return nil, ErrMaxDB
 	}
 	if m.Opener == nil {
-		return nil, 0, ErrNoOpener
+		return nil, ErrNoOpener
 	}
 	db, err := m.Opener.Open(ctx)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	db.SetMaxIdleConns(0)
-	m.idToDB.Store(id, db)
 	m.dbCount++
 	slog.Debug("DB opened", "connID", id, "DB", dbToStr(db), "count", m.dbCount)
-	return db, id, nil
+	return db, nil
+}
+
+func (m *Manager) closeDB(db *sql.DB, id ID) error {
+	m.dbMutex.Lock()
+	if m.dbCount > 0 {
+		m.dbCount--
+	}
+	count := m.dbCount
+	m.dbMutex.Unlock()
+	ctx := context.WithValue(context.Background(), connIDKey{}, id)
+	if m.Closer == nil {
+		return db.Close()
+	}
+	slog.Debug("DB closed", "connID", id, "DB", dbToStr(db), "count", count)
+	return m.Closer.Close(ctx, db)
 }
 
 func (m *Manager) Databases() iter.Seq2[ID, *sql.DB] {
 	return func(yield func(ID, *sql.DB) bool) {
-		m.idToDB.Range(func(id ID, db *sql.DB) bool {
-			return yield(id, db)
+		m.clients.Range(func(id ID, c *Client) bool {
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			if c.db == nil {
+				return true
+			}
+			return yield(id, c.db)
 		})
 	}
+}
+
+func (m *Manager) Client(ctx context.Context) (*Client, error) {
+	id, ok := ctx.Value(connIDKey{}).(ID)
+	if !ok {
+		return nil, ErrNoID
+	}
+	client, ok := m.clients.Load(id)
+	if !ok {
+		return nil, ErrNoConnection
+	}
+	return client, nil
+}
+
+type Client struct {
+	ID   ID
+	m    *Manager
+	db   *sql.DB
+	conn *sql.Conn
+	mu   sync.Mutex
+}
+
+func (client *Client) Conn(ctx context.Context) (*sql.Conn, error) {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if client.conn != nil {
+		return client.conn, nil
+	}
+	if client.db == nil {
+		db, err := client.m.openDB(ctx, client.ID)
+		if err != nil {
+			return nil, err
+		}
+		client.db = db
+	}
+	conn, err := client.db.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	client.conn = conn
+	return client.conn, nil
+}
+
+func (client *Client) close() error {
+	var err1, err2 error
+	if client.conn != nil {
+		err1 = client.conn.Close()
+		client.conn = nil
+	}
+	if client.db != nil {
+		err2 = client.m.closeDB(client.db, client.ID)
+		client.db = nil
+	}
+	if err1 != nil {
+		return err1
+	}
+	return err2
 }

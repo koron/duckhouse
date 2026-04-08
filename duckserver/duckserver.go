@@ -461,24 +461,26 @@ func (srv *Server) handleQuery(w http.ResponseWriter, r *http.Request) error {
 		return httperror.Newf(400, "Unsupported format: %s", err)
 	}
 
-	// Determine database
-	db, connid, err := srv.connManager.GetDB(r.Context())
-	if connid != 0 {
-		w.Header().Set(ConnectionIDHeader, connid.String())
+	// Determine a database connection which associated with the requenst.
+	client, err := srv.connManager.Client(r.Context())
+	if err != nil {
+		return httperror.Newf(500, "No associated DB: %s", err)
 	}
+	w.Header().Set(ConnectionIDHeader, client.ID.String())
+	conn, err := client.Conn(r.Context())
 	if err != nil {
 		if errors.Is(err, conndb.ErrMaxDB) {
 			return httperror.Newf(429, err.Error())
 		}
-		return httperror.Newf(500, "No associated DB: %s", err)
+		return httperror.Newf(500, "Failed to connect DB: %s", err)
 	}
 
 	// Register an executing query, and defer unregister it.
-	q := srv.queryDatabase.Add(r.Context(), connid, query)
+	q := srv.queryDatabase.Add(r.Context(), client.ID, query)
 	defer q.Close()
 
 	// Execute a query
-	rows, err := db.QueryContext(q.Context(), query)
+	rows, err := conn.QueryContext(q.Context(), query)
 	dur := time.Since(q.Start)
 	if r, ok := w.(accesslog.QueryReporter); ok {
 		r.QueryReport(query, dur)
