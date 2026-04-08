@@ -362,7 +362,10 @@ func TestStatusConnections(t *testing.T) {
 		return
 	}
 	assert.Equal(t, []TestConnStatus{
-		{DBStats: sql.DBStats{MaxIdleClosed: 2}},
+		{DBStats: sql.DBStats{
+			OpenConnections: 1,
+			InUse:           1,
+		}},
 	}, got, cmpopts.IgnoreFields(TestConnStatus{}, "ID"))
 	wg.Wait()
 }

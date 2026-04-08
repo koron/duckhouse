@@ -79,10 +79,12 @@ func writeLog(logger *slog.Logger, ww *wrapWriter, r *http.Request) {
 		slog.Int("size", ww.bsize),
 	)
 
-	// Connection and query
+	// Connection ID
 	if cid, ok := conndb.GetID(r.Context()); ok {
 		attrs = append(attrs, slog.String("conn_id", cid.String()))
 	}
+
+	// Query information
 	if ww.queryReport != nil {
 		attrs = append(attrs,
 			slog.String("query", ww.queryReport.query),

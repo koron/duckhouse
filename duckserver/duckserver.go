@@ -173,7 +173,7 @@ func New(c Config) (*Server, error) {
 	// Setup DB connection manager
 	srv.connManager = &conndb.Manager{
 		MaxDB:  c.MaxDB,
-		Opener: conndb.OpenerFunc(srv.newDuckDB),
+		Opener: conndb.OpenerFunc(srv.connectDuckDB),
 		Closer: conndb.CloserFunc(srv.closeDuckDB),
 	}
 
@@ -288,26 +288,27 @@ func (srv *Server) PrivateRoot() string {
 }
 
 func (srv *Server) checkDB(ctx context.Context) error {
-	db, err := srv.newDuckDB(ctx)
+	db, conn, err := srv.connectDuckDB(ctx)
 	if err != nil {
 		return err
 	}
+	defer conn.Close()
 	defer db.Close()
-	return db.PingContext(ctx)
+	return conn.PingContext(ctx)
 }
 
-func (srv *Server) newDuckDB(ctx context.Context) (*sql.DB, error) {
+func (srv *Server) connectDuckDB(ctx context.Context) (*sql.DB, *sql.Conn, error) {
 	// Compose duckdbinit.Settings
 	settings := srv.dbSettings
 	if srv.dbSharedDir != "" {
 		if err := os.MkdirAll(srv.dbSharedDir, 0777); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		settings.AllowedDirectories = append(settings.AllowedDirectories, srv.dbSharedDir)
 	}
 	privateDir, err := srv.getPrivateDir(ctx, true)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if privateDir != "" {
 		settings.AllowedDirectories = append(settings.AllowedDirectories, privateDir)
@@ -326,7 +327,12 @@ func (srv *Server) newDuckDB(ctx context.Context) (*sql.DB, error) {
 	if entry, ok := authn.AuthnEntry(ctx); ok && entry.InitQuery != "" {
 		initQueries = append(initQueries, entry.InitQuery)
 	}
-	return duckdbinit.Open(ctx, settings, initQueries...)
+	// Open and connect to a database.
+	db, conn, err := duckdbinit.Open(ctx, settings, initQueries...)
+	if err != nil {
+		return nil, nil, err
+	}
+	return db, conn, nil
 }
 
 func (srv *Server) closeDuckDB(ctx context.Context, db *sql.DB) error {
@@ -343,7 +349,7 @@ func (srv *Server) getPrivateDir(ctx context.Context, makeDir bool) (string, err
 	if srv.dbPrivateRoot == "" {
 		return "", nil
 	}
-	connID, ok := srv.connManager.GetID(ctx)
+	connID, ok := conndb.GetID(ctx)
 	if !ok {
 		slog.Debug("connection ID cannot be determined")
 		return "", nil
@@ -461,24 +467,26 @@ func (srv *Server) handleQuery(w http.ResponseWriter, r *http.Request) error {
 		return httperror.Newf(400, "Unsupported format: %s", err)
 	}
 
-	// Determine database
-	db, connid, err := srv.connManager.GetDB(r.Context())
-	if connid != 0 {
-		w.Header().Set(ConnectionIDHeader, connid.String())
+	// Determine a database connection which associated with the requenst.
+	client, err := srv.connManager.Client(r.Context())
+	if err != nil {
+		return httperror.Newf(500, "No associated DB: %s", err)
 	}
+	w.Header().Set(ConnectionIDHeader, client.ID.String())
+	conn, err := client.Conn()
 	if err != nil {
 		if errors.Is(err, conndb.ErrMaxDB) {
 			return httperror.Newf(429, err.Error())
 		}
-		return httperror.Newf(500, "No associated DB: %s", err)
+		return httperror.Newf(500, "Failed to connect DB: %s", err)
 	}
 
 	// Register an executing query, and defer unregister it.
-	q := srv.queryDatabase.Add(r.Context(), connid, query)
+	q := srv.queryDatabase.Add(r.Context(), client.ID, query)
 	defer q.Close()
 
 	// Execute a query
-	rows, err := db.QueryContext(q.Context(), query)
+	rows, err := conn.QueryContext(q.Context(), query)
 	dur := time.Since(q.Start)
 	if r, ok := w.(accesslog.QueryReporter); ok {
 		r.QueryReport(query, dur)

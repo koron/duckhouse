@@ -9,10 +9,10 @@ import (
 	"github.com/koron/duckpop/internal/duckdbinit"
 )
 
-func testSetting[T any](t *testing.T, db *sql.DB, name string, want T) {
+func testSetting[T any](t *testing.T, conn *sql.Conn, name string, want T) {
 	t.Helper()
 	var got T
-	err := db.QueryRowContext(t.Context(), "SELECT current_setting(?)", name).Scan(&got)
+	err := conn.QueryRowContext(t.Context(), "SELECT current_setting(?)", name).Scan(&got)
 	if err != nil {
 		t.Errorf("failed to retrieve threads setting: %s", err)
 		return
@@ -26,16 +26,17 @@ func TestSettings(t *testing.T) {
 		MemoryLimit: "2GiB",
 		LockConfig:  true,
 	}
-	db, err := duckdbinit.Open(t.Context(), settings)
+	db, conn, err := duckdbinit.Open(t.Context(), settings)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
+		conn.Close()
 		db.Close()
 	})
-	testSetting(t, db, "threads", 3)
-	testSetting(t, db, "memory_limit", "2.0 GiB")
-	testSetting(t, db, "lock_configuration", true)
+	testSetting(t, conn, "threads", 3)
+	testSetting(t, conn, "memory_limit", "2.0 GiB")
+	testSetting(t, conn, "lock_configuration", true)
 }
 
 func TestLockConfig(t *testing.T) {
@@ -45,20 +46,23 @@ func TestLockConfig(t *testing.T) {
 			Threads:    1,
 			LockConfig: true,
 		}
-		db, err := duckdbinit.Open(ctx, settings, "SET threads = 4")
+		db, conn, err := duckdbinit.Open(ctx, settings, "SET threads = 4")
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer db.Close()
+		t.Cleanup(func() {
+			conn.Close()
+			db.Close()
+		})
 
 		// Verify that initQueries is overwriting Settings.
-		testSetting(t, db, "threads", 4)
+		testSetting(t, conn, "threads", 4)
 		if t.Failed() {
 			return
 		}
 
 		// Verify that changes cannot be made after initQueries.
-		_, err = db.ExecContext(ctx, "SET threads = 8")
+		_, err = conn.ExecContext(ctx, "SET threads = 8")
 		assert.Equal(t, `Invalid Input Error: Cannot change configuration option "threads" - the configuration has been locked`, err.Error())
 	})
 
@@ -68,23 +72,26 @@ func TestLockConfig(t *testing.T) {
 			Threads:    1,
 			LockConfig: false,
 		}
-		db, err := duckdbinit.Open(ctx, settings, "SET threads = 4")
+		db, conn, err := duckdbinit.Open(ctx, settings, "SET threads = 4")
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer db.Close()
+		t.Cleanup(func() {
+			conn.Close()
+			db.Close()
+		})
 
 		// Verify that initQueries is overwriting Settings.
-		testSetting(t, db, "threads", 4)
+		testSetting(t, conn, "threads", 4)
 		if t.Failed() {
 			return
 		}
 
 		// Verify that changes can be made after initQueries.
-		_, err = db.ExecContext(ctx, "SET threads = 8")
+		_, err = conn.ExecContext(ctx, "SET threads = 8")
 		if err != nil {
 			t.Fatalf("failed to set threads: %s", err)
 		}
-		testSetting(t, db, "threads", 8)
+		testSetting(t, conn, "threads", 8)
 	})
 }

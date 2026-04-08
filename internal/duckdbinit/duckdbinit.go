@@ -7,41 +7,24 @@ import (
 	"net/url"
 )
 
-// initDB initializes a DB instance with parameters associated with the context.
-func initDB(ctx context.Context, s Settings, db *sql.DB, initQueries []string) error {
-	if err := s.apply(ctx, db); err != nil {
-		return err
-	}
-	for _, initQuery := range initQueries {
-		if initQuery != "" {
-			if _, err := db.ExecContext(ctx, initQuery); err != nil {
-				return err
-			}
-		}
-	}
-	// Finally, configure lock_configuration.
-	ex := &execContext{ctx: ctx, db: db}
-	if !s.EnableExternalAccess {
-		setNoCheck(ex, "enable_external_access", false)
-	}
-	if s.LockConfig {
-		setNoCheck(ex, "lock_configuration", true)
-	}
-	return ex.err
-}
-
-func Open(ctx context.Context, s Settings, initQueries ...string) (*sql.DB, error) {
+func Open(ctx context.Context, s Settings, initQueries ...string) (*sql.DB, *sql.Conn, error) {
 	p := url.Values{}
 	p.Add("home_directory", s.HomeDir)
 	db, err := sql.Open("duckdb", "?"+p.Encode())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if err := initDB(ctx, s, db, initQueries); err != nil {
+	conn, err := db.Conn(ctx)
+	if err != nil {
 		db.Close()
-		return nil, err
+		return nil, nil, err
 	}
-	return db, nil
+	if err := s.init(ctx, conn, initQueries); err != nil {
+		conn.Close()
+		db.Close()
+		return nil, nil, err
+	}
+	return db, conn, nil
 }
 
 type Settings struct {
@@ -60,10 +43,32 @@ type Settings struct {
 	LockConfig           bool
 }
 
+func (s Settings) init(ctx context.Context, conn *sql.Conn, initQueries []string) error {
+	if err := s.apply(ctx, conn); err != nil {
+		return err
+	}
+	for _, initQuery := range initQueries {
+		if initQuery != "" {
+			if _, err := conn.ExecContext(ctx, initQuery); err != nil {
+				return err
+			}
+		}
+	}
+	// Finally, configure enable_external_access and lock_configuration.
+	ex := &execContext{ctx: ctx, conn: conn}
+	if !s.EnableExternalAccess {
+		setNoCheck(ex, "enable_external_access", false)
+	}
+	if s.LockConfig {
+		setNoCheck(ex, "lock_configuration", true)
+	}
+	return nil
+}
+
 // apply applies limits for the resources used by a DuckDB instance.
-func (s Settings) apply(ctx context.Context, db *sql.DB) error {
+func (s Settings) apply(ctx context.Context, conn *sql.Conn) error {
 	// NOTE: home_directory should be specified in DSN
-	ex := &execContext{ctx: ctx, db: db}
+	ex := &execContext{ctx: ctx, conn: conn}
 	set(ex, "threads", s.Threads)
 	set(ex, "memory_limit", s.MemoryLimit)
 	set(ex, "extension_directory", s.ExtensionDir)
@@ -77,9 +82,9 @@ func (s Settings) apply(ctx context.Context, db *sql.DB) error {
 }
 
 type execContext struct {
-	ctx context.Context
-	db  *sql.DB
-	err error
+	ctx  context.Context
+	conn *sql.Conn
+	err  error
 }
 
 func set[T comparable](ex *execContext, name string, v T) {
@@ -90,7 +95,7 @@ func set[T comparable](ex *execContext, name string, v T) {
 	if v == zero {
 		return
 	}
-	_, err := ex.db.ExecContext(ex.ctx, "SET GLOBAL "+name+" = ?", v)
+	_, err := ex.conn.ExecContext(ex.ctx, "SET GLOBAL "+name+" = ?", v)
 	ex.err = err
 }
 
@@ -98,6 +103,6 @@ func setNoCheck(ex *execContext, name string, v any) {
 	if ex.err != nil {
 		return
 	}
-	_, err := ex.db.ExecContext(ex.ctx, "SET GLOBAL "+name+" = ?", v)
+	_, err := ex.conn.ExecContext(ex.ctx, "SET GLOBAL "+name+" = ?", v)
 	ex.err = err
 }
