@@ -467,7 +467,7 @@ func (srv *Server) handleQuery(w http.ResponseWriter, r *http.Request) error {
 		return httperror.Newf(500, "No associated DB: %s", err)
 	}
 	w.Header().Set(ConnectionIDHeader, client.ID.String())
-	conn, err := client.Conn(r.Context())
+	conn, err := client.Conn()
 	if err != nil {
 		if errors.Is(err, conndb.ErrMaxDB) {
 			return httperror.Newf(429, err.Error())

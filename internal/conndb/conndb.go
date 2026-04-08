@@ -54,7 +54,7 @@ func (id ID) String() string {
 	return fmt.Sprintf("C_%08x", uint32(id))
 }
 
-func (m *Manager) newClient(c net.Conn) *Client {
+func (m *Manager) withNewClient(ctx context.Context, c net.Conn) *Client {
 	client := &Client{m: m}
 	for {
 		id := ID(rand.Uint32())
@@ -62,6 +62,7 @@ func (m *Manager) newClient(c net.Conn) *Client {
 		if !ok {
 			m.connToID.Store(c, id)
 			client.ID = id
+			client.ctx = context.WithValue(ctx, connIDKey{}, client.ID)
 			return client
 		}
 	}
@@ -70,8 +71,8 @@ func (m *Manager) newClient(c net.Conn) *Client {
 type connIDKey = struct{}
 
 func (m *Manager) ConnContext(ctx context.Context, c net.Conn) context.Context {
-	client := m.newClient(c)
-	return context.WithValue(ctx, connIDKey{}, client.ID)
+	client := m.withNewClient(ctx, c)
+	return client.Context()
 }
 
 func (m *Manager) ConnState(c net.Conn, s http.ConnState) {
@@ -132,7 +133,7 @@ func (m *Manager) openDB(ctx context.Context, id ID) (*sql.DB, error) {
 	if m.Opener == nil {
 		return nil, ErrNoOpener
 	}
-	db, err := m.Opener.Open(ctx)
+	db, err := m.Opener.Open(context.WithValue(ctx, connIDKey{}, id))
 	if err != nil {
 		return nil, err
 	}
@@ -183,27 +184,34 @@ func (m *Manager) Client(ctx context.Context) (*Client, error) {
 }
 
 type Client struct {
-	ID   ID
-	m    *Manager
+	m   *Manager
+	ctx context.Context
+
+	ID ID
+
+	mu   sync.Mutex
 	db   *sql.DB
 	conn *sql.Conn
-	mu   sync.Mutex
 }
 
-func (client *Client) Conn(ctx context.Context) (*sql.Conn, error) {
+func (clinet *Client) Context() context.Context {
+	return clinet.ctx
+}
+
+func (client *Client) Conn() (*sql.Conn, error) {
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	if client.conn != nil {
 		return client.conn, nil
 	}
 	if client.db == nil {
-		db, err := client.m.openDB(ctx, client.ID)
+		db, err := client.m.openDB(client.ctx, client.ID)
 		if err != nil {
 			return nil, err
 		}
 		client.db = db
 	}
-	conn, err := client.db.Conn(ctx)
+	conn, err := client.db.Conn(client.ctx)
 	if err != nil {
 		return nil, err
 	}
