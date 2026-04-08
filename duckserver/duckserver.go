@@ -173,7 +173,7 @@ func New(c Config) (*Server, error) {
 	// Setup DB connection manager
 	srv.connManager = &conndb.Manager{
 		MaxDB:  c.MaxDB,
-		Opener: conndb.OpenerFunc(srv.newDuckDB),
+		Opener: conndb.OpenerFunc(srv.connectDuckDB),
 		Closer: conndb.CloserFunc(srv.closeDuckDB),
 	}
 
@@ -288,26 +288,27 @@ func (srv *Server) PrivateRoot() string {
 }
 
 func (srv *Server) checkDB(ctx context.Context) error {
-	db, err := srv.newDuckDB(ctx)
+	db, conn, err := srv.connectDuckDB(ctx)
 	if err != nil {
 		return err
 	}
+	defer conn.Close()
 	defer db.Close()
-	return db.PingContext(ctx)
+	return conn.PingContext(ctx)
 }
 
-func (srv *Server) newDuckDB(ctx context.Context) (*sql.DB, error) {
+func (srv *Server) connectDuckDB(ctx context.Context) (*sql.DB, *sql.Conn, error) {
 	// Compose duckdbinit.Settings
 	settings := srv.dbSettings
 	if srv.dbSharedDir != "" {
 		if err := os.MkdirAll(srv.dbSharedDir, 0777); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		settings.AllowedDirectories = append(settings.AllowedDirectories, srv.dbSharedDir)
 	}
 	privateDir, err := srv.getPrivateDir(ctx, true)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if privateDir != "" {
 		settings.AllowedDirectories = append(settings.AllowedDirectories, privateDir)
@@ -326,7 +327,12 @@ func (srv *Server) newDuckDB(ctx context.Context) (*sql.DB, error) {
 	if entry, ok := authn.AuthnEntry(ctx); ok && entry.InitQuery != "" {
 		initQueries = append(initQueries, entry.InitQuery)
 	}
-	return duckdbinit.Open(ctx, settings, initQueries...)
+	// Open and connect to a database.
+	db, conn, err := duckdbinit.Open(ctx, settings, initQueries...)
+	if err != nil {
+		return nil, nil, err
+	}
+	return db, conn, nil
 }
 
 func (srv *Server) closeDuckDB(ctx context.Context, db *sql.DB) error {

@@ -29,12 +29,12 @@ type Manager struct {
 }
 
 type Opener interface {
-	Open(ctx context.Context) (*sql.DB, error)
+	Open(ctx context.Context) (*sql.DB, *sql.Conn, error)
 }
 
-type OpenerFunc func(ctx context.Context) (*sql.DB, error)
+type OpenerFunc func(ctx context.Context) (*sql.DB, *sql.Conn, error)
 
-func (fn OpenerFunc) Open(ctx context.Context) (*sql.DB, error) {
+func (fn OpenerFunc) Open(ctx context.Context) (*sql.DB, *sql.Conn, error) {
 	return fn(ctx)
 }
 
@@ -124,23 +124,23 @@ func dbToStr(db *sql.DB) string {
 	return fmt.Sprintf("%p", db)
 }
 
-func (m *Manager) openDB(ctx context.Context, id ID) (*sql.DB, error) {
+func (m *Manager) openDB(ctx context.Context, id ID) (*sql.DB, *sql.Conn, error) {
 	m.dbMutex.Lock()
 	defer m.dbMutex.Unlock()
 	if m.dbCount >= m.MaxDB {
-		return nil, ErrMaxDB
+		return nil, nil, ErrMaxDB
 	}
 	if m.Opener == nil {
-		return nil, ErrNoOpener
+		return nil, nil, ErrNoOpener
 	}
-	db, err := m.Opener.Open(context.WithValue(ctx, connIDKey{}, id))
+	db, conn, err := m.Opener.Open(context.WithValue(ctx, connIDKey{}, id))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	db.SetMaxIdleConns(0)
 	m.dbCount++
 	slog.Debug("DB opened", "connID", id, "DB", dbToStr(db), "count", m.dbCount)
-	return db, nil
+	return db, conn, nil
 }
 
 func (m *Manager) closeDB(db *sql.DB, id ID) error {
@@ -205,17 +205,13 @@ func (client *Client) Conn() (*sql.Conn, error) {
 		return client.conn, nil
 	}
 	if client.db == nil {
-		db, err := client.m.openDB(client.ctx, client.ID)
+		db, conn, err := client.m.openDB(client.ctx, client.ID)
 		if err != nil {
 			return nil, err
 		}
 		client.db = db
+		client.conn = conn
 	}
-	conn, err := client.db.Conn(client.ctx)
-	if err != nil {
-		return nil, err
-	}
-	client.conn = conn
 	return client.conn, nil
 }
 

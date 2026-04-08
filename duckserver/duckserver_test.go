@@ -365,7 +365,6 @@ func TestStatusConnections(t *testing.T) {
 		{DBStats: sql.DBStats{
 			OpenConnections: 1,
 			InUse:           1,
-			MaxIdleClosed:   1,
 		}},
 	}, got, cmpopts.IgnoreFields(TestConnStatus{}, "ID"))
 	wg.Wait()
