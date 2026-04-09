@@ -44,6 +44,7 @@ func flag2config(c *duckserver.Config) error {
 	)
 
 	flag.BoolVar(&c.EnableDebugLog, "debug", false, `enable debug log`)
+	flag.BoolVar(&c.EnablePprof, "pprof", false, `enable pprof end point`)
 	flag.StringVar(&c.Address, "addr", "localhost:9998", `address hosts HTTP server`)
 	flag.IntVar(&c.MaxDB, "maxdb", 20, `maximum number of DB instances`)
 	flag.StringVar(&c.PIDFile, "pidfile", "", `file to record the process ID`)

@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -48,6 +49,7 @@ var (
 
 type Config struct {
 	EnableDebugLog bool
+	EnablePprof    bool
 
 	Address string
 	MaxDB   int
@@ -259,7 +261,7 @@ func (srv *Server) Serve(ctx context.Context) error {
 		BaseContext: func(ln net.Listener) context.Context {
 			srv.startedCond.L.Lock()
 			addr := ln.Addr()
-			srv.logger.Info("listening on", "addr", addr)
+			srv.logger.Info("listening on", "addr", addr, "pprof", srv.config.EnablePprof)
 			srv.URL = "http://" + addr.String()
 			srv.startedCond.Broadcast()
 			srv.startedCond.L.Unlock()
@@ -378,6 +380,13 @@ func (srv *Server) newDuckpopHandler() http.Handler {
 	}
 	if srv.uiFS != nil {
 		mux.Handle("/ui/", http.StripPrefix("/ui/", http.FileServerFS(srv.uiFS)))
+	}
+	if srv.config.EnablePprof {
+		mux.HandleFunc("GET /debug/pprof/", pprof.Index)
+		mux.HandleFunc("GET /debug/pprof/cmdline", pprof.Cmdline)
+		mux.HandleFunc("GET /debug/pprof/profile", pprof.Profile)
+		mux.HandleFunc("GET /debug/pprof/symbol", pprof.Symbol)
+		mux.HandleFunc("GET /debug/pprof/trace", pprof.Trace)
 	}
 
 	// Install middlewares.
