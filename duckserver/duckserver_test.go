@@ -560,6 +560,7 @@ func TestGetConfigJSON(t *testing.T) {
 	}
 	want := `{
   "EnableDebugLog": false,
+  "EnablePprof": false,
   "Address": "127.0.0.1:0",
   "MaxDB": 4,
   "PIDFile": "",
