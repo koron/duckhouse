@@ -303,7 +303,7 @@ func (srv *Server) connectDuckDB(ctx context.Context) (*sql.DB, *sql.Conn, error
 	// Compose duckdbinit.Settings
 	settings := srv.dbSettings
 	if srv.dbSharedDir != "" {
-		if err := os.MkdirAll(srv.dbSharedDir, 0777); err != nil {
+		if err := os.MkdirAll(srv.dbSharedDir, 0750); err != nil {
 			return nil, nil, err
 		}
 		settings.AllowedDirectories = append(settings.AllowedDirectories, srv.dbSharedDir)
@@ -358,7 +358,7 @@ func (srv *Server) getPrivateDir(ctx context.Context, makeDir bool) (string, err
 	}
 	privateDir := filepath.Join(srv.dbPrivateRoot, connID.String())
 	if makeDir {
-		if err := os.MkdirAll(privateDir, 0777); err != nil {
+		if err := os.MkdirAll(privateDir, 0700); err != nil {
 			return "", err
 		}
 	}
