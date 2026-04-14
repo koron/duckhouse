@@ -1,0 +1,42 @@
+:root {
+  --anchor-color: #0000ee;
+  --anchor-hover-background-color: #ccccff;
+
+  --table-border-width: 1px;
+  --table-border-style: solid;
+  --table-border-color: #e0e0e0;
+}
+
+a {
+  text-decoration: underline;
+  text-underline-offset: .2rem;
+  cursor: pointer;
+
+  &, &:visited {
+    color: var(--anchor-color);
+  }
+}
+
+table {
+  border-collapse: collapse;
+
+  th, td {
+    padding: 0.15em 0.6em;
+    border: var(--table-border-width) var(--table-border-style) var(--table-border-color);
+  }
+
+  thead th {
+    font-size: 0.85em;
+    font-weight: 500;
+    background-color: #cccccc;
+  }
+
+  tbody tr {
+    &:nth-child(odd) {
+      background-color: #ffffff;
+    }
+    &:nth-child(even) {
+      background-color: #f4f4f4;
+    }
+  }
+}
