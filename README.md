@@ -254,6 +254,8 @@ $ curl 'http://127.0.0.1:9998/?f=table' -d "SELECT version() as VER"
 
 -   `/ui/` - 簡素なUI
     -   `/ui/editor/` - クエリーエディタ
+    -   `/ui/connections/` - DB接続一覧
+    -   `/ui/queries/` - クエリー一覧 (キャンセル操作可)
 -   `/shared/` - 共有ディレクトリの内容
 
 ## 認証・認可機能
