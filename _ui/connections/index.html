@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+
+<head>
+<meta charset="UTF-8">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<link rel="stylesheet" type="text/css" href="connections.css">
+</head>
+
+<h1>Connections Status &ndash; Duckpop</h1>
+
+<p>
+A maximum of 50 connections will be displayed. Connections exceeding this limit will not be shown.
+</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>MaxOpenConnections</th>
+      <th>OpenConnections</th>
+      <th>InUse</th>
+      <th>Idle</th>
+      <th>WaitCount</th>
+      <th>WaitDuration</th>
+      <th>MaxIdleClosed</th>
+      <th>MaxIdleTimeClosed</th>
+      <th>MaxLifetimeClosed</th>
+    </tr>
+  </thead>
+  <tbody id="connections">
+  </tbody>
+</table>
+
+<br>
+
+<div>
+  <button id="refresh" disabled>Refresh</button>
+  <span>
+    <input type="checkbox" id="auto_refresh" checked />
+    <label for="auto_refresh">Auto refresh</label> <span>(every 5 secs)</span>
+  </span>
+</div>
+
+<script src="connections.js"></script>
