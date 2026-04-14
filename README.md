@@ -248,6 +248,8 @@ $ curl 'http://127.0.0.1:9998/?f=table' -d "SELECT version() as VER"
         -   `Duckpop-Authnid` - 認証ID
     -   ボディ: なし
 
+キャンセルされたクエリーのリクエストには `504 Gateway Tiemout` が返される。
+
 ### その他のパス
 
 -   `/ui/` - 簡素なUI

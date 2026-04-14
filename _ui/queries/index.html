@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+
+<head>
+<meta charset="UTF-8">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<link rel="stylesheet" type="text/css" href="queries.css">
+</head>
+
+<h1>Queries Status &ndash; Duckpop</h1>
+
+<p>
+A maximum of 50 queries will be displayed. Queries exceeding this limit will not be shown.
+</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>ConnID</th>
+      <th>Query</th>
+      <th>Start at</th>
+      <th>Duration</th>
+    </tr>
+  </thead>
+  <tbody id="queries">
+    <tr>
+      <td colspan="5" style="text-align: center;">Not fetched yet</td>
+    </tr>
+  </tbody>
+</table>
+
+<br>
+
+<div>
+  <button id="refresh" disabled>Refresh</button>
+  <span>
+    <input type="checkbox" id="auto_refresh" checked />
+    <label for="auto_refresh">Auto refresh</label> <span>(every 5 secs)</span>
+  </span>
+</div>
+
+<script src="queries.js"></script>
