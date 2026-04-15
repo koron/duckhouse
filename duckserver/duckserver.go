@@ -82,7 +82,7 @@ func getwd() string {
 
 func DefaultConfig() Config {
 	return Config{
-		Address:          "localhost:9998",
+		Address:          "localhost:9281",
 		MaxDB:            20,
 		AccessLogFormat:  "text",
 		DBHomeDir:        filepath.Join(getwd(), ".duckpop"),
