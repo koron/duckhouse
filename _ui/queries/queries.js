@@ -25,17 +25,26 @@
     return s.replace(escapeRegex, m => escapeMap[m]);
   }
 
-  async function cancelQuery(id) {
+  async function cancelQuery(ev, id) {
     const url = '/status/queries/' + encodeURIComponent(id);
+    const data = { x: ev.pageX, y: ev.pageY };
     try {
       // TODO: Support "Authorization" header
       const response = await fetch(url, { method: 'DELETE' });
       if (response.status != 204) {
-        throw new Error(`Error status ${response.status}`);
+        if (response.status == 401) {
+          throw new Error("unauthorized (401)");
+        }
+        throw new Error(`error status ${response.status}`);
       }
+      showToast('Canceled ID:' + id, data);
       refresh();
     } catch (err) {
-      console.error(err);
+      showToast('Failed: ' + err.message, {
+        duration: 4000,
+        backgroundColor: '#9009',
+        ...data
+      });
     }
   }
 
@@ -45,7 +54,7 @@
     const id = escapeHTML(d.ID);
     return `
       <tr>
-        <td><button onclick='cancelQuery("${id}")'>Cancel</button> ${id}</td>
+        <td><button onclick='cancelQuery(event, "${id}")'>Cancel</button> ${id}</td>
         <td>${escapeHTML(d.ConnID)}</td>
         <td><pre><code>${escapeHTML(d.Query)}</code></pre></td>
         <td>${escapeHTML(d.Start)}</td>
