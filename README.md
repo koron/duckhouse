@@ -105,7 +105,7 @@ $ curl 'http://127.0.0.1:9281/?f=table' -d "SELECT version() as VER"
 └────────┘
 ```
 
-## エンドポイント
+## Endpoints
 
 ### クエリー実行
 
@@ -418,13 +418,13 @@ DuckDBの設定一覧: <https://duckdb.org/docs/stable/configuration/overview>
 
         認証には次の形式の `Authorization` ヘッダーが必要
 
-            `Authorization: basic {base64({name}:{password})}`
+            `Authorization: Basic {base64({name}:{password})}`
 
     -   `token` - `type` が `"bearer"` の時に必須なトークン文字列
 
         認証には次の形式の `Authorization` ヘッダーが必要
 
-            `Authorization: bearer {token}`
+            `Authorization: Bearer {token}`
 
     -   `init_query` - 初期化クエリーの文字列。
         特定の認証を利用した際に、スレッド数やメモリ割り当ての上限を引き上げる目的で利用する。

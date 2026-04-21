@@ -9,6 +9,9 @@
   const refreshButton = d.querySelector("#refresh");
   const autoRefreshCb = d.querySelector("#auto_refresh");
 
+  const optionAuthType = d.querySelector("#opt_authtype");
+  const optionAuthValue = d.querySelector("#opt_authvalue");
+
   const escapeRegex = /[&<>"']/g
   const escapeMap = {
     '&': '&amp;',
@@ -29,8 +32,20 @@
     const url = '/status/queries/' + encodeURIComponent(id);
     const data = { x: ev.pageX, y: ev.pageY };
     try {
-      // TODO: Support "Authorization" header
-      const response = await fetch(url, { method: 'DELETE' });
+      // Add "Authorization" header.
+      const headers = {};
+      const authType = optionAuthType.value.toLowerCase();
+      const authValue = optionAuthValue.value;
+      switch (authType) {
+        case 'basic':
+          headers['Authorization'] = 'Basic ' + btoa(authValue.trim());
+          break;
+        case 'bearer':
+          headers['Authorization'] = 'Bearer ' + authValue.trim();
+          break;
+      }
+
+      const response = await fetch(url, { method: 'DELETE', headers: headers });
       if (response.status != 204) {
         if (response.status == 401) {
           throw new Error("unauthorized (401)");

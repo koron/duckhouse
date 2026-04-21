@@ -41,5 +41,22 @@ A maximum of 50 queries will be displayed. Queries exceeding this limit will not
   </span>
 </div>
 
+<br>
+
+<div>
+  <div>
+    <label for="opt_authtype">Auth type</label>
+    <select id="opt_authtype">
+      <option value="">(none)</option>
+      <option value="basic">user:password</option>
+      <option value="bearer">API Token</option>
+    </select>
+  </div>
+  <div>
+    <label for="opt_authvalue">Auth value</label>
+    <input id="opt_authvalue" size="32"></input>
+  </div>
+</div>
+
 <script src="../lib/toast.js"></script>
 <script src="queries.js"></script>
