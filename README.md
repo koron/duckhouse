@@ -135,8 +135,14 @@ $ curl 'http://127.0.0.1:9281/?f=table' -d "SELECT version() as VER"
         -   `Content-Type`: 出力フォーマット次第
         -   `Duckpop-Authnid` - 認証ID
         -   `Duckpop-Connectionid` - 接続ID (DuckDBインスタンスの識別子)
+        -   `Duckpop-Queryid` - クエリーID
         -   `Duckpop-Duration` - クエリーにかかった時間
     -   ボディ: クエリーの結果
+
+リクエストに `Expect: 100-continue` ヘッダーを追加すると、
+Duckpopはクエリーを実際に実行する直前で `100 Continue` を返すようになる。
+その際、一緒に `Duckpop-Connectionid` と `Duckpop-Queryid` ヘッダーが返される。
+これは、特に後者のクエリーIDをクエリーキャンセルに使えるようにするための動作である。
 
 ### 死活監視
 
