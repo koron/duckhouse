@@ -38,6 +38,7 @@ import (
 const (
 	AuthnIDHeader      = "Duckpop-Authnid"
 	ConnectionIDHeader = "Duckpop-Connectionid"
+	QueryIDHeader      = "Duckpop-Queryid"
 	DurationHeader     = "Duckpop-Duration"
 
 	defaultFormat = "csv"
@@ -492,7 +493,12 @@ func (srv *Server) handleQuery(w http.ResponseWriter, r *http.Request) error {
 
 	// Register an executing query, and defer unregister it.
 	q := srv.queryDatabase.Add(r.Context(), client.ID, query)
+	w.Header().Set(QueryIDHeader, q.ID.String())
 	defer q.Close()
+
+	if r.Header.Get("Expect") == "100-continue" {
+		w.WriteHeader(http.StatusContinue)
+	}
 
 	// Execute a query
 	rows, err := conn.QueryContext(q.Context(), query)
