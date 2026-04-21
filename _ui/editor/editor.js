@@ -27,6 +27,8 @@
 
   const optionFormat = d.querySelector("#opt_format");
 
+  const progressCover = d.querySelector('#progress-cover');
+
   // Handlers
 
   function doFormat() {
@@ -37,21 +39,26 @@
     queryForm.value = minify(queryForm.value);
   }
 
-  function doQuery() {
-    const query = queryForm.value;
-    const format = optionFormat.value.toLowerCase();
-    const url = '/?f=' + encodeURIComponent(format);
-    // post a query
-    fetch(url, {
-      mode: 'cors',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'plain/text',
-      },
-      body: query,
-    })
-      .then(r => r.text())
-      .then(v => outputForm.value = v);
+  async function doQuery() {
+    progressCover.style.display = '';
+    try {
+      const query = queryForm.value;
+      const format = optionFormat.value.toLowerCase();
+      const url = '/?f=' + encodeURIComponent(format);
+      // post a query
+      await fetch(url, {
+        mode: 'cors',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'plain/text',
+        },
+        body: query,
+      })
+        .then(r => r.text())
+        .then(v => outputForm.value = v);
+    } finally {
+      progressCover.style.display = 'none';
+    }
   }
 
   // Functions
