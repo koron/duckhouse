@@ -27,6 +27,9 @@
 
   const optionFormat = d.querySelector("#opt_format");
 
+  const optionAuthType = d.querySelector("#opt_authtype");
+  const optionAuthValue = d.querySelector("#opt_authvalue");
+
   const progressCover = d.querySelector('#progress-cover');
 
   // Handlers
@@ -45,17 +48,33 @@
       const query = queryForm.value;
       const format = optionFormat.value.toLowerCase();
       const url = '/?f=' + encodeURIComponent(format);
+      const headers = {
+          'Content-Type': 'plain/text',
+      };
+      // Add "Authorization" header.
+      const authType = optionAuthType.value.toLowerCase();
+      const authValue = optionAuthValue.value;
+      switch (authType) {
+        case 'basic':
+          headers['Authorization'] = 'Basic ' + btoa(authValue.trim());
+          break;
+        case 'bearer':
+          headers['Authorization'] = 'Bearer ' + authValue.trim();
+          break;
+      }
       // post a query
-      await fetch(url, {
+      const r = await fetch(url, {
         mode: 'cors',
         method: 'POST',
-        headers: {
-          'Content-Type': 'plain/text',
-        },
+        headers: headers,
         body: query,
       })
-        .then(r => r.text())
-        .then(v => outputForm.value = v);
+      if (!r.ok) {
+        outputForm.classList.add('error');
+      } else {
+        outputForm.classList.remove('error');
+      }
+      outputForm.value = await r.text();
     } finally {
       progressCover.style.display = 'none';
     }

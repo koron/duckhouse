@@ -24,6 +24,7 @@
 
 <h3>Options</h3>
 <section class="container">
+
   <div class="flex-h">
     <div>
       <label for="opt_format">Format</label>
@@ -35,6 +36,22 @@
       </select>
     </div>
   </div>
+
+  <div class="flex-h">
+    <div>
+      <label for="opt_authtype">Auth type</label>
+      <select id="opt_authtype">
+        <option value="">(none)</option>
+        <option value="basic">user:password</option>
+        <option value="bearer">API Token</option>
+      </select>
+    </div>
+    <div>
+      <label for="opt_authvalue">Auth value</label>
+      <input id="opt_authvalue" size="32"></input>
+    </div>
+  </div>
+
 </section>
 
 

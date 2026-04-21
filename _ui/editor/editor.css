@@ -44,6 +44,10 @@ kbd {
   font-family: Consolas, monospace;
   white-space: pre;
   overflow-x: auto;
+
+  &.error {
+    color: #f00;
+  }
 }
 
 #help {
