@@ -105,7 +105,7 @@ $ curl 'http://127.0.0.1:9281/?f=table' -d "SELECT version() as VER"
 └────────┘
 ```
 
-## エンドポイント
+## Endpoints
 
 ### クエリー実行
 
