@@ -454,7 +454,19 @@ func (srv *Server) handleConfig(w http.ResponseWriter, r *http.Request) error {
 	return enc.Encode(srv.config)
 }
 
+func (srv *Server) shouldRedirectToUI(r *http.Request) bool {
+	if srv.uiFS == nil || r.Method != "GET" {
+		return false
+	}
+	_, err := readQparamQuery(r)
+	return errors.Is(err, ErrNoQuery)
+}
+
 func (srv *Server) handleQuery(w http.ResponseWriter, r *http.Request) error {
+	if srv.shouldRedirectToUI(r) {
+		http.Redirect(w, r, "/ui/", http.StatusTemporaryRedirect)
+		return nil
+	}
 	if err := srv.checkAuthz(w, r); err != nil {
 		return err
 	}
@@ -463,10 +475,6 @@ func (srv *Server) handleQuery(w http.ResponseWriter, r *http.Request) error {
 	}
 	query, err := readQuery(r)
 	if err != nil {
-		if r.Method == "GET" && errors.Is(err, ErrNoQuery) && srv.uiFS != nil {
-			http.Redirect(w, r, "/ui/", http.StatusTemporaryRedirect)
-			return nil
-		}
 		return httperror.Newf(400, "No queries: %s", err)
 	}
 
@@ -536,6 +544,10 @@ func readQuery(r *http.Request) (string, error) {
 	if len(b) > 0 {
 		return string(b), nil
 	}
+	return readQparamQuery(r)
+}
+
+func readQparamQuery(r *http.Request) (string, error) {
 	q := r.URL.Query()
 	if s := q.Get("q"); s != "" {
 		return s, nil

@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -579,4 +580,35 @@ func TestGetConfigJSON(t *testing.T) {
 }
 `
 	assert.Equal(t, want, got)
+}
+
+func TestRedirectToUI(t *testing.T) {
+	t.Run("normal", func(t *testing.T) {
+		ts := startServer1(t, func(c *duckserver.Config) *duckserver.Config {
+			c.UIResourceFS = os.DirFS("./testdata/ui")
+			return c
+		})
+		got, err := readResponse(doGet(ts, "/"))
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		assert.Equal(t, "<h1>Test UI</h1>\n", got)
+	})
+
+	t.Run("authn", func(t *testing.T) {
+		// Even if authentication is enabled but authentication credentials are
+		// not provided, redirect to the UI.
+		ts := startServer1(t, func(c *duckserver.Config) *duckserver.Config {
+			c.UIResourceFS = os.DirFS("testdata/ui")
+			c.AuthnFile = "testdata/authn.json"
+			return c
+		})
+		got, err := readResponse(doGet(ts, "/"))
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		assert.Equal(t, "<h1>Test UI</h1>\n", got)
+	})
 }
