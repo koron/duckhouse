@@ -91,7 +91,7 @@ $ duckpop
 ```console
 $ curl 'http://127.0.0.1:9281/' -d "SELECT version() as VER"
 VER
-v1.5.1
+v1.5.2
 ```
 
 同じクエリーの結果を別のフォーマット(table)で受信します。
@@ -101,7 +101,7 @@ $ curl 'http://127.0.0.1:9281/?f=table' -d "SELECT version() as VER"
 ┌────────┐
 │  VER   │
 ├────────┤
-│ v1.5.1 │
+│ v1.5.2 │
 └────────┘
 ```
 
@@ -498,7 +498,7 @@ $ curl -v -u 'user2:xyz789' 'http://127.0.0.1:9281/' -d "SELECT version() as VER
 < Content-Length: 11
 <
 VER
-v1.5.0
+v1.5.2
 * Connection #0 to host 127.0.0.1:9281 left intact
 
 $ curl -v -H 'Authorization: Bearer foobarbaz' 'http://127.0.0.1:9281/' -d "SELECT version() as VER"
@@ -523,7 +523,7 @@ $ curl -v -H 'Authorization: Bearer foobarbaz' 'http://127.0.0.1:9281/' -d "SELE
 < Content-Length: 11
 <
 VER
-v1.5.0
+v1.5.2
 * Connection #0 to host 127.0.0.1:9281 left intact
 ```
 
